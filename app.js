@@ -516,21 +516,23 @@ function docMeta(d) {
   return bits.join('　');
 }
 function docTitle(d) { return d.t || basename(d.p); }
-// 區塊所屬的族（catalog.ui.families）→ 草木染色，用在清單左側 6px 方角色條與分類頁的方點
+// 區塊所屬的族（catalog.ui.families）：只用來在「分類」頁分組
 function familyOf(lane) {
   const fams = (CAT && CAT.ui && CAT.ui.families) || [];
   const head = lane.split('/')[0];
   return fams.find((f) => f.prefixes.includes(lane) || f.prefixes.includes(head)) || null;
 }
-function famColor(el, lane) {
-  const f = familyOf(lane);
-  if (f) el.style.setProperty('--fam', `var(--dye-${f.dye})`);
+// 只有領域地圖上色：顏色＝本人在 Notion Category 選單上設的顏色（catalog.ui.area_dyes，依領域頁路徑）。
+// 其他地方一律中性色，重點色用紫（本人 2026-11-02）。
+function areaColor(el, path) {
+  const dye = CAT && CAT.ui && CAT.ui.area_dyes && CAT.ui.area_dyes[path];
+  if (dye) el.style.setProperty('--fam', `var(--dye-${dye})`);
   return el;
 }
 function itemLink(d, extra) {
   const a = h('a', { class: 'item', href: pageHref(d.p) },
     h('span', { class: 't' }, docTitle(d)), h('span', { class: 'm' }, docMeta(d)), extra || null);
-  return h('li', null, famColor(a, d.l));
+  return h('li', null, areaColor(a, d.p));
 }
 function listOf(items, emptyText) {
   const ul = h('ul', { class: 'list' }, items);
@@ -594,8 +596,8 @@ async function viewHome() {
       if (!m) continue;
       const d = resolveLink(m[2], idx.p);
       if (!d) continue;
-      tiles.push(famColor(h('a', { class: 'tile', href: pageHref(d.p) }, h('span', { class: 't' }, h('span', { class: 'dot' }), m[1].trim()),
-        h('span', { class: 'm' }, m[3].replace(/^[●○⊡]\s*/, ''))), d.l));
+      tiles.push(areaColor(h('a', { class: 'tile area', href: pageHref(d.p) }, h('span', { class: 't' }, m[1].trim()),
+        h('span', { class: 'm' }, m[3].replace(/^[●○⊡]\s*/, ''))), d.p));
     }
     if (tiles.length) kids.push(secTitle('領域地圖'), h('div', { class: 'grid' }, tiles));
   }
@@ -631,8 +633,8 @@ async function viewBrowse() {
   for (const name of famNames) {
     const lanes = (groups.get(name) || []).sort(byOrder);
     if (!lanes.length) continue;
-    kids.push(secTitle(name), h('div', { class: 'grid' }, lanes.map((l) => famColor(h('a', { class: 'tile', href: '#/l/' + enc(l) },
-      h('span', { class: 't' }, h('span', { class: 'dot' }), laneName(l)), h('span', { class: 'm' }, `${counts.get(l).toLocaleString()} 則`)), l))));
+    kids.push(secTitle(name), h('div', { class: 'grid' }, lanes.map((l) => h('a', { class: 'tile', href: '#/l/' + enc(l) },
+      h('span', { class: 't' }, laneName(l)), h('span', { class: 'm' }, `${counts.get(l).toLocaleString()} 則`)))));
   }
   setView(...kids);
 }
@@ -664,7 +666,7 @@ async function viewLane(lane) {
   };
   more.addEventListener('click', add);
   add();
-  const head = famColor(h('div', { class: 'doc-head' }, h('h1', null, laneName(lane))), lane);
+  const head = h('div', { class: 'doc-head' }, h('h1', null, laneName(lane)));
   setView(head, h('p', { class: 'page-sub' }, `${docs.length.toLocaleString()} 則・新到舊`), list, more);
 }
 
@@ -679,7 +681,7 @@ async function viewPage(path) {
   if (!cat) return emptyState();
   const d = cat.byPath.get(path);
   if (!d) return setView(h('h1', null, '找不到這一頁'), h('p', { class: 'muted' }, path));
-  const head = famColor(h('div', { class: 'doc-head' }, h('div', { class: 'doc-path' }, d.p), h('h1', null, docTitle(d))), d.l);
+  const head = areaColor(h('div', { class: 'doc-head' }, h('div', { class: 'doc-path' }, d.p), h('h1', null, docTitle(d))), d.p);
   const chips = h('div', { class: 'chips' }, [laneName(d.l), d.k, d.d && String(d.d).slice(0, 10), d.a, d.src]
     .filter(Boolean).map((x) => h('span', { class: 'tag' }, x)), d.unrev ? h('span', { class: 'tag warn' }, '未審') : null);
   pushHistory(d.p).catch(() => {});
@@ -785,7 +787,7 @@ async function viewSearch(q) {
     if (!shown) list.append(h('li', { class: 'empty' }, '沒有完全符合的結果。'));
   };
   chipRow.append(h('button', { type: 'button', class: 'filter', 'aria-pressed': 'true', onclick: (e) => pick(e, null) }, `全部 ${cands.length}`),
-    ...[...laneCountsQ].sort((a, b) => b[1] - a[1]).map(([l, c]) => famColor(h('button', { type: 'button', class: 'filter', 'aria-pressed': 'false', onclick: (e) => pick(e, l) }, h('span', { class: 'dot' }), `${laneName(l)} ${c}`), l)));
+    ...[...laneCountsQ].sort((a, b) => b[1] - a[1]).map(([l, c]) => h('button', { type: 'button', class: 'filter', 'aria-pressed': 'false', onclick: (e) => pick(e, l) }, `${laneName(l)} ${c}`)));
   function pick(e, lane) {
     state.lane = lane;
     chipRow.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b === e.currentTarget)));
