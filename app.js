@@ -516,12 +516,6 @@ function docMeta(d) {
   return bits.join('　');
 }
 function docTitle(d) { return d.t || basename(d.p); }
-// 區塊所屬的族（catalog.ui.families）：只用來在「分類」頁分組
-function familyOf(lane) {
-  const fams = (CAT && CAT.ui && CAT.ui.families) || [];
-  const head = lane.split('/')[0];
-  return fams.find((f) => f.prefixes.includes(lane) || f.prefixes.includes(head)) || null;
-}
 // 只有領域地圖上色：顏色＝本人在 Notion Category 選單上設的顏色（catalog.ui.area_dyes，依領域頁路徑）。
 // 其他地方一律中性色，重點色用紫（本人 2026-11-02）。
 function areaColor(el, path) {
@@ -619,21 +613,15 @@ async function viewBrowse() {
     const ia = order.indexOf(a), ib = order.indexOf(b);
     return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib) || laneName(a).localeCompare(laneName(b));
   };
-  const groups = new Map();
-  for (const l of counts.keys()) {
-    const f = familyOf(l);
-    const key = f ? f.name : '其他';
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key).push(l);
-  }
-  const famNames = ((cat.ui && cat.ui.families) || []).map((f) => f.name).concat(['其他']);
+  // 分組＝repo 原本的資料夾（catalog.ui.lane_groups，建置時從實際路徑算出；不另立分類系統）
+  const groupList = ((cat.ui && cat.ui.lane_groups) || [{ name: '全部', lanes: [...counts.keys()] }]);
   const nText = cat.docs.filter((d) => d.s != null).length;
   const nFiles = cat.docs.filter((d) => d.f).length;
   const kids = [h('h1', null, '分類'), h('p', { class: 'page-sub' }, `${nText.toLocaleString()} 則文字・${nFiles.toLocaleString()} 個圖片與附件`)];
-  for (const name of famNames) {
-    const lanes = (groups.get(name) || []).sort(byOrder);
+  for (const g of groupList) {
+    const lanes = g.lanes.filter((l) => counts.has(l)).sort(byOrder);
     if (!lanes.length) continue;
-    kids.push(secTitle(name), h('div', { class: 'grid' }, lanes.map((l) => h('a', { class: 'tile', href: '#/l/' + enc(l) },
+    kids.push(secTitle(g.name), h('div', { class: 'grid' }, lanes.map((l) => h('a', { class: 'tile', href: '#/l/' + enc(l) },
       h('span', { class: 't' }, laneName(l)), h('span', { class: 'm' }, `${counts.get(l).toLocaleString()} 則`)))));
   }
   setView(...kids);
