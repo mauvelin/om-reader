@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="zh-Hant-TW">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src https://api.github.com; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex, nofollow">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="OM 測試">
+<meta name="theme-color" content="#f8f6f1" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#16171b" media="(prefers-color-scheme: dark)">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<link rel="stylesheet" href="probe.css">
+<title>OM Reader 測試</title>
+</head>
+<body>
+<main>
+  <header class="top">
+    <h1>OM Reader 測試頁</h1>
+    <p class="muted">驗四件事：手機能不能存下全部資料、能不能從私有 repo 同步、Face ID 開啟鎖、能不能叫起 Notion App。
+    請先用 Safari「分享 → 加入主畫面」，<strong>從主畫面的圖示打開</strong>再測——主畫面 App 和 Safari 分頁的行為不同。</p>
+  </header>
+
+  <section class="card" id="sec-env">
+    <h2>0　環境</h2>
+    <dl id="env" class="kv"></dl>
+  </section>
+
+  <section class="card" id="sec-storage">
+    <h2>1　手機儲存</h2>
+    <p class="muted">正式 App 預計離線存約 300 MB。這裡寫入同樣大小的測試資料，隔幾天再打開，看資料還在不在。</p>
+    <dl id="st-info" class="kv"></dl>
+    <div class="row">
+      <button id="st-persist" type="button">請求持久儲存</button>
+    </div>
+    <div class="row">
+      <label for="st-mb">寫入大小（MB）</label>
+      <input id="st-mb" type="number" inputmode="numeric" min="10" max="2000" step="10" value="300">
+      <button id="st-write" type="button" class="primary">寫入測試資料</button>
+    </div>
+    <progress id="st-prog" max="100" value="0" hidden></progress>
+    <div class="row">
+      <button id="st-verify" type="button">驗證資料</button>
+      <button id="st-clear" type="button">清除測試資料</button>
+    </div>
+    <p id="st-out" class="out" role="status"></p>
+  </section>
+
+  <section class="card" id="sec-gh">
+    <h2>2　從私有 repo 同步</h2>
+    <p class="muted">用唯讀 token 直接呼叫 GitHub API。repo 名稱和 token 只存在這支手機，不寫進程式。</p>
+    <div class="field">
+      <label for="gh-repo">私有 repo（擁有者/名稱）</label>
+      <input id="gh-repo" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="owner/repo">
+    </div>
+    <div class="field">
+      <label for="gh-token">Fine-grained token</label>
+      <input id="gh-token" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="github_pat_…">
+    </div>
+    <div class="row">
+      <label class="check"><input id="gh-remember" type="checkbox"> 在這支手機記住（僅測試用）</label>
+    </div>
+    <div class="row">
+      <button id="gh-run" type="button" class="primary">開始測試</button>
+      <button id="gh-forget" type="button">清除記住的 token</button>
+    </div>
+    <ol id="gh-out" class="steps"></ol>
+  </section>
+
+  <section class="card" id="sec-lock">
+    <h2>3　Face ID 開啟鎖</h2>
+    <p class="muted">建立一把只屬於這個 App 的通行金鑰，再用 Face ID 解鎖。也順便測能不能從 Face ID 導出加密金鑰（PRF）——能的話，正式版可以把手機上的資料再加密一層。</p>
+    <div class="row">
+      <button id="lk-create" type="button">建立通行金鑰</button>
+      <button id="lk-unlock" type="button" class="primary">用 Face ID 解鎖</button>
+      <button id="lk-forget" type="button">忘記這把金鑰</button>
+    </div>
+    <ol id="lk-out" class="steps"></ol>
+  </section>
+
+  <section class="card" id="sec-notion">
+    <h2>4　叫起 Notion App</h2>
+    <p class="muted">貼一個你自己的 Notion 頁面網址（筆記 frontmatter 的 notion_page 那種），點下面三個連結，各回報一次結果。</p>
+    <div class="field">
+      <label for="nt-url">Notion 頁面網址</label>
+      <input id="nt-url" type="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="https://app.notion.com/p/…">
+    </div>
+    <p id="nt-id" class="out"></p>
+    <ul id="nt-links" class="links"></ul>
+  </section>
+
+  <section class="card" id="sec-result">
+    <h2>5　結果</h2>
+    <p class="muted">全部測完後按「複製結果」，貼回給 Claude。內容不含 token、repo 名稱與 Notion 網址。</p>
+    <textarea id="summary" rows="14" readonly></textarea>
+    <div class="row">
+      <button id="copy" type="button" class="primary">複製結果</button>
+    </div>
+    <p id="copy-out" class="out" role="status"></p>
+  </section>
+</main>
+<script src="probe.js"></script>
+</body>
+</html>
