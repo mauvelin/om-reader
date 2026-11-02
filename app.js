@@ -157,7 +157,7 @@ async function unlock() {
 }
 function lockNow() {
   KEY = null;
-  resetCaches();
+  resetCaches();   // 也清掉返回快取：上鎖後畫面上不留任何解密過的內容
   releaseBlobUrls();
 }
 let hiddenAt = 0;
@@ -300,8 +300,8 @@ let CAT = null;          // { docs, byPath, byName, byStem, built_at, source_com
 let LINKS = null;        // { out: Map, back: Map }
 const shardCache = new Map();
 const indexCache = new Map();
-const blobUrls = [];
-function resetCaches() { CAT = null; LINKS = null; INDEX_META = null; shardCache.clear(); indexCache.clear(); }
+let blobUrls = [];   // 目前畫面的 blob URL；畫面進返回快取時整桶帶走
+function resetCaches() { CAT = null; LINKS = null; INDEX_META = null; shardCache.clear(); indexCache.clear(); clearViewCache(); }
 
 async function fileBlob(path) {
   const r = await idbGet('files', path);
@@ -370,6 +370,10 @@ function resolveLink(target, srcPath) {
 }
 
 /* ════════ Markdown 渲染 ════════ */
+if (typeof window.markdownit !== 'function' || !window.DOMPurify) {
+  document.body.textContent = '程式沒有載入完整。請把 App 從多工畫面關掉再打開；還是不行就在有網路時打開一次。';
+  throw new Error('vendor scripts missing');
+}
 const md = window.markdownit({ html: true, linkify: true, breaks: true, typographer: false });
 const IMG_EXT = new Set(['jpg', 'jpeg', 'png', 'webp', 'gif', 'svg', 'bmp']);
 const defaultImage = md.renderer.rules.image;
@@ -421,16 +425,35 @@ function renderMarkdown(body, srcPath) {
   wrap.querySelectorAll('table').forEach((t) => { const w = h('div', { class: 'table-wrap' }); t.replaceWith(w); w.append(t); });
   return wrap;
 }
-async function hydrateMedia(root) {
-  for (const el of root.querySelectorAll('[data-om]')) {
-    const d = CAT.byPath.get(el.getAttribute('data-om'));
-    if (!d || !d.f) continue;
-    const b = await fileBlob(d.f);
-    if (!b) { if (el.tagName === 'IMG') el.alt = (el.alt || '') + '（圖片尚未同步）'; continue; }
-    const url = URL.createObjectURL(b);
-    blobUrls.push(url);
-    el.src = url;
-  }
+// 圖片與影片：捲到附近才解密（長頁不必一次解完所有圖）
+async function hydrateOne(el, bucket) {
+  const d = CAT && CAT.byPath.get(el.getAttribute('data-om'));
+  if (!d || !d.f) return;
+  const b = await fileBlob(d.f);
+  if (!b) { if (el.tagName === 'IMG') el.alt = (el.alt || '') + '（圖片尚未同步）'; return; }
+  const url = URL.createObjectURL(new Blob([b], { type: mimeOf(d.f) }));
+  bucket.push(url);
+  el.src = url;
+}
+function hydrateMedia(root) {
+  const bucket = blobUrls;
+  const els = [...root.querySelectorAll('[data-om]')];
+  if (!('IntersectionObserver' in window)) { els.forEach((el) => hydrateOne(el, bucket)); return; }
+  const io = new IntersectionObserver((entries) => {
+    for (const en of entries) if (en.isIntersecting) { io.unobserve(en.target); hydrateOne(en.target, bucket); }
+  }, { rootMargin: '1200px 0px' });
+  els.forEach((el) => io.observe(el));
+}
+// 頁內大綱：三個以上 ## / ### 才出現；點了捲到該處（hash 給路由用，不用 #id 錨點）
+function outline(mdRoot) {
+  const hs = [...mdRoot.querySelectorAll('h2, h3')];
+  if (hs.length < 3) return null;
+  const list = h('ol', { class: 'toc-list' });
+  hs.forEach((x) => {
+    list.append(h('li', { class: x.tagName === 'H3' ? 'sub' : null },
+      h('button', { type: 'button', class: 'toc-link', onclick: () => x.scrollIntoView({ block: 'start' }) }, x.textContent)));
+  });
+  return h('details', { class: 'toc' }, h('summary', null, `目錄（${hs.length}）`), list);
 }
 function releaseBlobUrls() { while (blobUrls.length) URL.revokeObjectURL(blobUrls.pop()); }
 
@@ -496,12 +519,23 @@ async function search(q) {
   }
   return { paths: [...(acc || [])], toks };
 }
-function snippet(text, q) {
-  const body = splitFrontmatter(text).body.replace(/!\[\[[^\]]*\]\]/g, '').replace(/\s+/g, ' ');
-  const i = body.toLowerCase().indexOf(q.toLowerCase());
-  if (i < 0) return null;
+// 摘要：先去掉 markdown 記號，再取第一個詞附近的一段，所有查詢詞都標記
+function plainText(text) {
+  return splitFrontmatter(text).body
+    .replace(/!\[\[[^\]]*\]\]/g, '').replace(/\[\[([^\]|]*\|)?([^\]]*)\]\]/g, '$2')
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, '').replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/^\s{0,3}(#{1,6}|>|[-*+]|\d+\.)\s+/gm, '').replace(/[*_`~]{1,3}/g, '').replace(/\s+/g, ' ');
+}
+function snippet(text, terms) {
+  const body = plainText(text);
+  const low = body.toLowerCase();
+  const hits = terms.map((t) => low.indexOf(t.toLowerCase())).filter((i) => i >= 0);
+  if (hits.length < terms.length) return null;
+  const i = Math.min(...hits);
   const start = Math.max(0, i - 30);
-  return { pre: (start > 0 ? '…' : '') + body.slice(start, i), hit: body.slice(i, i + q.length), post: body.slice(i + q.length, i + q.length + 60) + '…' };
+  const piece = (start > 0 ? '…' : '') + body.slice(start, i + 90) + (i + 90 < body.length ? '…' : '');
+  const esc = terms.map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
+  return piece.split(new RegExp(`(${esc})`, 'ig')).map((part, k) => (k % 2 ? h('mark', null, part) : part));
 }
 
 /* ════════ 區塊名稱 ════════ */
@@ -520,7 +554,7 @@ function docTitle(d) { return d.t || basename(d.p); }
 // 其他地方一律中性色，重點色用紫（本人 2026-11-02）。
 function areaColor(el, path) {
   const dye = CAT && CAT.ui && CAT.ui.area_dyes && CAT.ui.area_dyes[path];
-  if (dye) el.style.setProperty('--fam', `var(--dye-${dye})`);
+  if (dye) { el.style.setProperty('--fam', `var(--dye-${dye})`); el.classList.add('has-area'); }
   return el;
 }
 function itemLink(d, extra) {
@@ -556,9 +590,37 @@ async function pushHistory(p) {
 
 /* ════════ 畫面 ════════ */
 function setView(...kids) {
-  releaseBlobUrls();
-  view.replaceChildren(...kids);
+  view.replaceChildren(...kids.filter((k) => k != null));
   window.scrollTo(0, 0);
+}
+// 返回快取：文章、清單、搜尋、分類離開時把整個畫面（含展開筆數、篩選、捲動位置）留著，回來直接還原
+const viewCache = new Map();
+let curHash = null;
+const CACHEABLE = /^#\/(p|l|s)\/|^#\/browse/;
+function stashView() {
+  if (curHash && CACHEABLE.test(curHash) && view.childNodes.length) {
+    viewCache.delete(curHash);
+    viewCache.set(curHash, { nodes: [...view.childNodes], scroll: window.scrollY, urls: blobUrls });
+    blobUrls = [];
+    while (viewCache.size > 8) {
+      const [k, v] = viewCache.entries().next().value;
+      v.urls.forEach((u) => URL.revokeObjectURL(u));
+      viewCache.delete(k);
+    }
+  } else releaseBlobUrls();
+}
+function restoreView(hash) {
+  const c = viewCache.get(hash);
+  if (!c) return false;
+  viewCache.delete(hash);
+  view.replaceChildren(...c.nodes);
+  blobUrls = c.urls;
+  requestAnimationFrame(() => window.scrollTo(0, c.scroll));
+  return true;
+}
+function clearViewCache() {
+  for (const v of viewCache.values()) v.urls.forEach((u) => URL.revokeObjectURL(u));
+  viewCache.clear();
 }
 function emptyState() {
   setView(h('h1', null, '還沒有資料'),
@@ -639,11 +701,16 @@ async function viewHistory() {
     hist.length ? h('div', { class: 'row' }, clear) : null);
 }
 
+const isAux = (d) => /^_/.test(basename(d.p)) || basename(d.p) === 'index.md' || /\.(json|jsonl)$/.test(d.p);
 async function viewLane(lane) {
   const cat = await catalog();
   if (!cat) return emptyState();
-  const docs = cat.docs.filter((d) => d.l === lane && (d.s != null || /\.(pdf|html?|mp4)$/i.test(d.p)));
-  docs.sort((a, b) => (b.d ? String(b.d) : '').localeCompare(a.d ? String(a.d) : '') || a.p.localeCompare(b.p));
+  const all = cat.docs.filter((d) => d.l === lane && (d.s != null || /\.(pdf|html?|mp4)$/i.test(d.p)));
+  const docs = all.filter((d) => !isAux(d));
+  const aux = all.filter(isAux);
+  const dated = docs.filter((d) => d.d).length >= docs.length * 0.6;
+  if (dated) docs.sort((a, b) => String(b.d || '').localeCompare(String(a.d || '')) || a.p.localeCompare(b.p));
+  else docs.sort((a, b) => docTitle(a).localeCompare(docTitle(b), 'zh-Hant'));
   const list = h('ul', { class: 'list' });
   let shown = 0;
   const more = h('button', { class: 'btn more', type: 'button' }, '再多 100 則');
@@ -655,7 +722,8 @@ async function viewLane(lane) {
   more.addEventListener('click', add);
   add();
   const head = h('div', { class: 'doc-head' }, h('h1', null, laneName(lane)));
-  setView(head, h('p', { class: 'page-sub' }, `${docs.length.toLocaleString()} 則・新到舊`), list, more);
+  const auxBox = aux.length ? h('details', { class: 'aux' }, h('summary', null, `總覽與附檔（${aux.length}）`), listOf(aux.map((d) => itemLink(d)))) : null;
+  setView(head, h('p', { class: 'page-sub' }, `${docs.length.toLocaleString()} 則・${dated ? '新到舊' : '依名稱'}`), list, more, auxBox);
 }
 
 // iPhone 實測：www.notion.so 的連結會直接叫起 Notion App（2026-11-02）
@@ -669,8 +737,10 @@ async function viewPage(path) {
   if (!cat) return emptyState();
   const d = cat.byPath.get(path);
   if (!d) return setView(h('h1', null, '找不到這一頁'), h('p', { class: 'muted' }, path));
-  const head = areaColor(h('div', { class: 'doc-head' }, h('div', { class: 'doc-path' }, d.p), h('h1', null, docTitle(d))), d.p);
-  const chips = h('div', { class: 'chips' }, [laneName(d.l), d.k, d.d && String(d.d).slice(0, 10), d.a, d.src]
+  const crumb = h('nav', { class: 'crumb', 'aria-label': '所在位置' }, h('a', { href: '#/l/' + enc(d.l) }, laneName(d.l)));
+  const title = h('h1', { class: docTitle(d).length > 28 ? 'long' : null }, docTitle(d));
+  const head = areaColor(h('div', { class: 'doc-head' }, crumb, title), d.p);
+  const chips = h('div', { class: 'chips' }, [d.d && String(d.d).slice(0, 10), d.a, d.src]
     .filter(Boolean).map((x) => h('span', { class: 'tag' }, x)), d.unrev ? h('span', { class: 'tag warn' }, '未審') : null);
   pushHistory(d.p).catch(() => {});
   const actions = h('div', { class: 'doc-actions' });
@@ -681,7 +751,12 @@ async function viewPage(path) {
   if (d.s != null) {
     const text = await docText(d);
     if (text == null) body.append(h('p', { class: 'note' }, '這一頁的內容還沒同步。'));
-    else if (ext === 'md') body.append(renderMarkdown(splitFrontmatter(text).body, d.p));
+    else if (ext === 'md') {
+      const mdRoot = renderMarkdown(splitFrontmatter(text).body, d.p);
+      const toc = outline(mdRoot);
+      if (toc) body.append(toc);
+      body.append(mdRoot);
+    }
     else if (ext === 'csv' || ext === 'tsv') body.append(csvTable(text, ext === 'tsv' ? '\t' : ','));
     else body.append(h('pre', { class: 'raw' + (ext === 'txt' || ext === 'jsonl' ? ' wrap' : '') }, text));
   } else if (d.f) {
@@ -693,7 +768,11 @@ async function viewPage(path) {
       blobUrls.push(url);
       if (IMG_EXT.has(extOf(d.f))) body.append(h('img', { class: 'media-full', src: url, alt: '' }));
       else if (['mp4', 'mov'].includes(ext)) body.append(h('video', { class: 'media-full', src: url, controls: true, playsinline: true }));
-      else if (ext === 'html' || ext === 'htm') body.append(await htmlFrame(b), h('p', { class: 'muted' }, 'HTML 頁在隔離框架中執行，讀不到 App 的資料。'));
+      else if (ext === 'html' || ext === 'htm') {
+        const online = cat.ui && cat.ui.html_online && cat.ui.html_online[d.p];
+        if (online) actions.append(h('a', { class: 'btn', href: online, target: '_blank', rel: 'noopener noreferrer' }, svgIcon('external'), '開線上版'));
+        body.append(await htmlFrame(b), h('p', { class: 'muted' }, 'HTML 頁在隔離框架中執行，讀不到 App 的資料，也不會連到外部網站（地圖圖磚這類線上資源不顯示）。'));
+      }
       else body.append(h('a', { class: 'btn primary', href: url, target: '_blank', rel: 'noopener' }, ext === 'pdf' ? '打開 PDF' : '打開檔案'), h('p', { class: 'muted' }, fmtMB(b.size)));
     }
   }
@@ -709,16 +788,17 @@ async function viewPage(path) {
   const backs = (L.back.get(d.p) || []).map((p) => cat.byPath.get(p)).filter(Boolean);
   if (backs.length) kids.push(secTitle(`被引用（${backs.length}）`), listOf(backs.slice(0, 200).map((x) => itemLink(x))));
   setView(...kids);
-  await hydrateMedia(view);
+  hydrateMedia(view);
 }
 function mimeOf(p) {
   return ({ webp: 'image/webp', jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif', svg: 'image/svg+xml',
     pdf: 'application/pdf', mp4: 'video/mp4', mov: 'video/quicktime', html: 'text/html', htm: 'text/html' })[extOf(p)] || 'application/octet-stream';
 }
 function csvTable(text, sep) {
+  const LIMIT = 2000;
   const rows = [];
   let row = [], cell = '', q = false;
-  for (let i = 0; i < text.length && rows.length < 2000; i++) {
+  for (let i = 0; i < text.length; i++) {
     const c = text[i];
     if (q) { if (c === '"') { if (text[i + 1] === '"') { cell += '"'; i++; } else q = false; } else cell += c; }
     else if (c === '"') q = true;
@@ -728,9 +808,22 @@ function csvTable(text, sep) {
   }
   if (cell || row.length) { row.push(cell); rows.push(row); }
   const [hd, ...rest] = rows;
-  const t = h('table', { class: 'csv' }, h('thead', null, h('tr', null, (hd || []).map((x) => h('th', null, x)))),
-    h('tbody', null, rest.map((r) => h('tr', null, r.map((x) => h('td', null, x))))));
-  return h('div', { class: 'table-wrap' }, t);
+  const state = { newestFirst: false };
+  const wrap = h('div', { class: 'table-wrap csv-wrap' });
+  const note = h('p', { class: 'page-sub' });
+  const toggle = h('button', { type: 'button', class: 'btn' }, '從最後一列開始');
+  const isNum = (x) => /^-?[\d,]+(\.\d+)?%?$/.test(x.trim());
+  const draw = () => {
+    const body = state.newestFirst ? rest.slice(-LIMIT).reverse() : rest.slice(0, LIMIT);
+    const t = h('table', { class: 'csv' }, h('thead', null, h('tr', null, (hd || []).map((x) => h('th', null, x)))),
+      h('tbody', null, body.map((r) => h('tr', null, r.map((x) => h('td', { class: [isNum(x) ? 'num' : '', x.length > 24 ? 'long' : ''].join(' ').trim() || null, title: x.length > 24 ? x : null }, x))))));
+    wrap.replaceChildren(t);
+    note.textContent = `共 ${rest.length.toLocaleString()} 列${rest.length > LIMIT ? `，顯示${state.newestFirst ? '最後' : '前'} ${LIMIT.toLocaleString()} 列` : ''}`;
+    toggle.textContent = state.newestFirst ? '從第一列開始' : '從最後一列開始';
+  };
+  toggle.addEventListener('click', () => { state.newestFirst = !state.newestFirst; draw(); });
+  draw();
+  return h('div', null, h('div', { class: 'row' }, note, rest.length > 1 ? toggle : null), wrap);
 }
 // HTML 檔：sandbox（不給 allow-same-origin）＝不透明來源，讀不到 App 的 IndexedDB 與 token
 async function htmlFrame(blob) {
@@ -744,36 +837,45 @@ async function viewSearch(q) {
   $('#q').value = q;
   const cat = await catalog();
   if (!cat) return emptyState();
-  const t0 = performance.now();
+  const terms = q.trim().split(/\s+/).filter(Boolean);
   const { paths, toks } = await search(q);
-  if (!toks.length) return setView(h('h1', null, '搜尋'), h('p', { class: 'muted' }, '請輸入至少兩個字。'));
+  if (!toks.length || (terms.length === 1 && [...terms[0]].length === 1)) {
+    return setView(h('h1', null, '搜尋'), h('p', { class: 'empty-box' }, '請輸入至少兩個字（多個詞用空白分開，每個詞都要出現）。'));
+  }
+  const tl = terms.map((t) => t.toLowerCase());
   const ql = q.trim().toLowerCase();
-  let cands = paths.map((p) => cat.byPath.get(p)).filter(Boolean);
-  // 標題命中排前面，其餘依日期新到舊
-  cands.sort((a, b) => (docTitle(b).toLowerCase().includes(ql) - docTitle(a).toLowerCase().includes(ql)) || String(b.d || '').localeCompare(String(a.d || '')));
+  const rank = (d) => { const t = docTitle(d).toLowerCase(); return t === ql ? 0 : tl.every((x) => t.includes(x)) ? 1 : 2; };
+  const cands = paths.map((p) => cat.byPath.get(p)).filter(Boolean);
+  cands.sort((a, b) => rank(a) - rank(b) || String(b.d || '').localeCompare(String(a.d || '')));
+  if (!cands.length) return setView(h('h1', null, `「${q}」`), h('p', { class: 'empty-box' }, '沒有找到。'));
   const laneCountsQ = new Map();
   for (const d of cands) laneCountsQ.set(d.l, (laneCountsQ.get(d.l) || 0) + 1);
-  const state = { lane: null };
+  const state = { lane: null, cursor: 0, shown: 0 };
   const list = h('ul', { class: 'list' });
   const info = h('p', { class: 'page-sub' });
+  const more = h('button', { type: 'button', class: 'btn more', hidden: true }, '再多 50 則');
   const chipRow = h('div', { class: 'filter-row' });
-  const render = async () => {
-    list.replaceChildren();
-    const pool = state.lane ? cands.filter((d) => d.l === state.lane) : cands;
-    let shown = 0, checked = 0;
-    for (const d of pool) {
-      if (shown >= 50 || checked >= 200) break;
-      checked++;
+  const pool = () => (state.lane ? cands.filter((d) => d.l === state.lane) : cands);
+  // 逐篇驗證：每個詞都要真的出現在標題或內文（索引是二字組，會有假陽性）
+  const page = async () => {
+    more.hidden = true;
+    const all = pool();
+    let added = 0;
+    while (state.cursor < all.length && added < 50) {
+      const d = all[state.cursor++];
       const text = await docText(d);
-      const sn = text ? snippet(text, q.trim()) : null;
-      const titleHit = docTitle(d).toLowerCase().includes(ql);
-      if (!sn && !titleHit) continue;   // 二字組都在但整串不連續：略過
-      shown++;
-      list.append(itemLink(d, sn ? h('span', { class: 'snip' }, sn.pre, h('mark', null, sn.hit), sn.post) : null));
+      const sn = text ? snippet(text, terms) : null;
+      const title = docTitle(d).toLowerCase();
+      if (!sn && !tl.every((x) => title.includes(x))) continue;
+      added++; state.shown++;
+      list.append(itemLink(d, sn ? h('span', { class: 'snip' }, ...sn) : null));
     }
-    info.textContent = `${pool.length} 則候選，顯示前 ${shown} 則完全符合（${Math.round(performance.now() - t0)} ms）`;
-    if (!shown) list.append(h('li', { class: 'empty' }, '沒有完全符合的結果。'));
+    info.textContent = `${state.shown} 則${state.cursor < all.length ? `・還有 ${all.length - state.cursor} 則待比對` : ''}`;
+    if (!state.shown && state.cursor >= all.length) list.replaceChildren(h('li', { class: 'empty' }, '索引有候選，但沒有一則同時包含所有詞。'));
+    more.hidden = state.cursor >= all.length;
   };
+  more.addEventListener('click', page);
+  const render = () => { list.replaceChildren(); state.cursor = 0; state.shown = 0; return page(); };
   chipRow.append(h('button', { type: 'button', class: 'filter', 'aria-pressed': 'true', onclick: (e) => pick(e, null) }, `全部 ${cands.length}`),
     ...[...laneCountsQ].sort((a, b) => b[1] - a[1]).map(([l, c]) => h('button', { type: 'button', class: 'filter', 'aria-pressed': 'false', onclick: (e) => pick(e, l) }, `${laneName(l)} ${c}`)));
   function pick(e, lane) {
@@ -781,7 +883,7 @@ async function viewSearch(q) {
     chipRow.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b === e.currentTarget)));
     render();
   }
-  setView(h('h1', null, `「${q}」`), chipRow, info, list);
+  setView(h('h1', null, `「${q}」`), laneCountsQ.size > 1 ? chipRow : null, info, list, more);
   await render();
 }
 
@@ -829,7 +931,7 @@ async function viewSettings() {
     } catch (e) {
       out.textContent = '同步失敗：' + (e.message || e);
     } finally {
-      checkBtn.disabled = false; prog.hidden = true; fillInfo();
+      checkBtn.disabled = false; checkBtn.className = 'btn primary'; prog.hidden = true; fillInfo();
     }
   };
   checkBtn.addEventListener('click', async () => {
@@ -845,6 +947,7 @@ async function viewSettings() {
       const total = plan.textBytes + plan.mediaBytes;
       if (!plan.want.length && !plan.stale.length) { out.textContent = '已是最新，沒有要下載的。'; return; }
       out.textContent = `這次要下載 ${plan.want.length} 個檔、共 ${fmtMB(total)}：文字與索引 ${fmtMB(plan.textBytes)}，圖片與附件 ${fmtMB(plan.mediaBytes)}。`;
+      checkBtn.className = 'btn';
       choice.replaceChildren(h('button', { type: 'button', class: 'btn primary', onclick: () => doSync(plan, false) }, `全部下載（${fmtMB(total)}）`));
       if (plan.mediaFiles) choice.append(h('button', { type: 'button', class: 'btn', onclick: () => doSync(plan, true) }, `只下載文字（${fmtMB(plan.textBytes)}）`));
       choice.hidden = false;
@@ -909,6 +1012,10 @@ async function route() {
     updateChrome(hash, locked);
     if (!hasLock) return viewSetupLock();
     if (!KEY) return viewLock();
+    if (!hash.startsWith('#/s/')) $('#q').value = '';
+    stashView();
+    curHash = hash;
+    if (restoreView(hash)) return;
     if (hash.startsWith('#/browse')) await viewBrowse();
     else if (hash.startsWith('#/history')) await viewHistory();
     else if (hash.startsWith('#/p/')) await viewPage(dec(hash.slice(4)));
@@ -942,11 +1049,22 @@ function updateChrome(hash, locked) {
   });
 }
 $('#back').addEventListener('click', () => { navDepth = Math.max(0, navDepth - 2); history.back(); });
+// 回到頂端：捲過一個半畫面才出現
+const toTop = h('button', { type: 'button', class: 'btn to-top', 'aria-label': '回到頂端', hidden: true, onclick: () => window.scrollTo(0, 0) }, svgIcon('up'));
+document.body.append(toTop);
+window.addEventListener('scroll', () => { toTop.hidden = document.body.classList.contains('locked') || window.scrollY < window.innerHeight * 1.5; }, { passive: true });
 // 明暗：跟隨系統 → 淺色 → 深色（選擇只存在這台裝置）
 const THEMES = [['auto', '跟隨系統'], ['light', '淺色'], ['dark', '深色']];
 function applyTheme(t) {
   if (t === 'auto') document.documentElement.removeAttribute('data-theme'); else document.documentElement.setAttribute('data-theme', t);
   try { if (t === 'auto') localStorage.removeItem('om-reader-theme'); else localStorage.setItem('om-reader-theme', t); } catch (e) { /* 略過 */ }
+  const tc = { light: '#f8f6f1', dark: '#16171b' };
+  document.querySelectorAll('meta[name="theme-color"]').forEach((m) => {
+    const media = m.getAttribute('data-media') || m.getAttribute('media');
+    if (!m.getAttribute('data-media')) m.setAttribute('data-media', media);
+    if (t === 'auto') { m.setAttribute('media', media); m.content = /dark/.test(media) ? tc.dark : tc.light; }
+    else { m.removeAttribute('media'); m.content = tc[t]; }
+  });
   const btn = $('#theme');
   btn.querySelector('use').setAttribute('href', '#i-' + (t === 'auto' ? 'auto' : t === 'light' ? 'sun' : 'moon'));
   btn.setAttribute('aria-label', '明暗：' + THEMES.find((x) => x[0] === t)[1]);
