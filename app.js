@@ -20,6 +20,16 @@ function h(tag, attrs, ...kids) {
   return e;
 }
 const fmtMB = (b) => (b / 1048576).toFixed(1) + ' MB';
+function svgIcon(name) {
+  const ns = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(ns, 'svg');
+  svg.setAttribute('class', 'i');
+  svg.setAttribute('aria-hidden', 'true');
+  const use = document.createElementNS(ns, 'use');
+  use.setAttribute('href', '#i-' + name);
+  svg.append(use);
+  return svg;
+}
 const enc = (p) => p.split('/').map(encodeURIComponent).join('/');
 const dec = (p) => p.split('/').map(decodeURIComponent).join('/');
 const pageHref = (p) => '#/p/' + enc(p);
@@ -506,9 +516,46 @@ function docMeta(d) {
   return bits.join('　');
 }
 function docTitle(d) { return d.t || basename(d.p); }
+// 區塊所屬的族（catalog.ui.families）→ 草木染色，用在清單左側 6px 方角色條與分類頁的方點
+function familyOf(lane) {
+  const fams = (CAT && CAT.ui && CAT.ui.families) || [];
+  const head = lane.split('/')[0];
+  return fams.find((f) => f.prefixes.includes(lane) || f.prefixes.includes(head)) || null;
+}
+function famColor(el, lane) {
+  const f = familyOf(lane);
+  if (f) el.style.setProperty('--fam', `var(--dye-${f.dye})`);
+  return el;
+}
 function itemLink(d, extra) {
-  return h('li', null, h('a', { class: 'item', href: pageHref(d.p) },
-    h('span', { class: 't' }, docTitle(d)), h('span', { class: 'm' }, docMeta(d)), extra || null));
+  const a = h('a', { class: 'item', href: pageHref(d.p) },
+    h('span', { class: 't' }, docTitle(d)), h('span', { class: 'm' }, docMeta(d)), extra || null);
+  return h('li', null, famColor(a, d.l));
+}
+function listOf(items, emptyText) {
+  const ul = h('ul', { class: 'list' }, items);
+  if (!items.length) ul.append(h('li', { class: 'empty' }, emptyText || '沒有內容'));
+  return ul;
+}
+function secTitle(text, linkHref, linkText) {
+  return h('div', { class: 'sec-title' }, h('span', null, text), linkHref ? h('a', { href: linkHref }, linkText) : null);
+}
+function laneCounts(cat) {
+  const counts = new Map();
+  for (const d of cat.docs) if (d.s != null || /\.(pdf|html?|mp4)$/i.test(d.p)) counts.set(d.l, (counts.get(d.l) || 0) + 1);
+  return counts;
+}
+
+/* ════════ 看過（存在 kv、加密） ════════ */
+async function getHistory() {
+  const rec = await kvGet('history');
+  if (!rec || !KEY) return [];
+  try { return JSON.parse(td.decode(await open_(rec))); } catch (e) { return []; }
+}
+async function pushHistory(p) {
+  const list = (await getHistory()).filter((x) => x.p !== p);
+  list.unshift({ p, at: Date.now() });
+  await kvSet('history', await seal(te.encode(JSON.stringify(list.slice(0, 100)))));
 }
 
 /* ════════ 畫面 ════════ */
@@ -526,9 +573,18 @@ function emptyState() {
 async function viewHome() {
   const cat = await catalog();
   if (!cat) return emptyState();
-  const kids = [];
-  // 領域地圖：讀 catalog.ui.home_map 指定的頁面裡「### 名稱 → [[頁面]] 說明」的行
   const ui = cat.ui || {};
+  const kids = [];
+  const st = (await kvGet('state')) || {};
+  if (st.files) {
+    const have = await idbFileCount();
+    const missing = st.files - (st.pendingMedia || 0) - have;
+    if (missing > 0) kids.push(h('p', { class: 'note' }, `手機上少了 ${missing} 個檔（可能被系統清掉了）。到「同步」按「檢查更新」就會補回來。`));
+  }
+  // 繼續看
+  const hist = (await getHistory()).map((x) => cat.byPath.get(x.p)).filter(Boolean).slice(0, 3);
+  if (hist.length) kids.push(secTitle('繼續看', '#/history', '全部'), listOf(hist.map((d) => itemLink(d))));
+  // 領域地圖：讀 catalog.ui.home_map 指定的頁面裡「### 名稱 → [[頁面]] 說明」的行
   const idx = ui.home_map ? cat.byPath.get(ui.home_map) : null;
   if (idx) {
     const text = await docText(idx);
@@ -538,33 +594,59 @@ async function viewHome() {
       if (!m) continue;
       const d = resolveLink(m[2], idx.p);
       if (!d) continue;
-      tiles.push(h('a', { class: 'tile', href: pageHref(d.p) }, h('span', { class: 't' }, m[1].trim()), h('span', { class: 'm' }, m[3].replace(/^[●○⊡]\s*/, ''))));
+      tiles.push(famColor(h('a', { class: 'tile', href: pageHref(d.p) }, h('span', { class: 't' }, h('span', { class: 'dot' }), m[1].trim()),
+        h('span', { class: 'm' }, m[3].replace(/^[●○⊡]\s*/, ''))), d.l));
     }
-    if (tiles.length) kids.push(h('div', { class: 'sec-title' }, '領域地圖'), h('div', { class: 'grid' }, tiles));
+    if (tiles.length) kids.push(secTitle('領域地圖'), h('div', { class: 'grid' }, tiles));
   }
-  // 區塊
-  const counts = new Map();
-  for (const d of cat.docs) if (d.s != null || /\.(pdf|html?)$/i.test(d.p)) counts.set(d.l, (counts.get(d.l) || 0) + 1);
-  const order = laneOrder();
-  const lanes = [...counts.keys()].sort((a, b) => {
-    const ia = order.indexOf(a), ib = order.indexOf(b);
-    return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib) || a.localeCompare(b);
-  });
-  kids.push(h('div', { class: 'sec-title' }, '全部內容'),
-    h('div', { class: 'grid' }, lanes.map((l) => h('a', { class: 'tile', href: '#/l/' + enc(l) }, h('span', { class: 't' }, laneName(l)), h('span', { class: 'm' }, `${counts.get(l)} 則`)))));
-  // 最近
+  // 最近新增
   const skip = new Set(ui.recent_exclude || []);
   const recent = cat.docs.filter((d) => d.d && d.p.endsWith('.md') && !skip.has(d.l))
-    .sort((a, b) => String(b.d).localeCompare(String(a.d))).slice(0, 15);
-  kids.push(h('div', { class: 'sec-title' }, '最近新增'), h('ul', { class: 'list' }, recent.map((d) => itemLink(d))));
-  const st = (await kvGet('state')) || {};
-  if (st.files) {
-    const have = await idbFileCount();
-    const missing = st.files - (st.pendingMedia || 0) - have;
-    if (missing > 0) kids.unshift(h('p', { class: 'note' }, `手機上少了 ${missing} 個檔（可能被系統清掉了）。到「設定與同步」按「檢查更新」就會補回來。`));
-  }
-  if (st.syncedAt) kids.push(h('p', { class: 'muted' }, `資料版本 ${String(cat.source_commit || '').slice(0, 7)}，同步於 ${new Date(st.syncedAt).toLocaleString('zh-TW')}`));
+    .sort((a, b) => String(b.d).localeCompare(String(a.d))).slice(0, 12);
+  kids.push(secTitle('最近新增'), listOf(recent.map((d) => itemLink(d))));
+  if (st.syncedAt) kids.push(h('p', { class: 'muted more' }, `資料版本 ${String(cat.source_commit || '').slice(0, 7)}・同步於 ${new Date(st.syncedAt).toLocaleString('zh-TW', { dateStyle: 'medium', timeStyle: 'short' })}`));
   setView(...kids);
+}
+
+async function viewBrowse() {
+  const cat = await catalog();
+  if (!cat) return emptyState();
+  const counts = laneCounts(cat);
+  const order = laneOrder();
+  const byOrder = (a, b) => {
+    const ia = order.indexOf(a), ib = order.indexOf(b);
+    return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib) || laneName(a).localeCompare(laneName(b));
+  };
+  const groups = new Map();
+  for (const l of counts.keys()) {
+    const f = familyOf(l);
+    const key = f ? f.name : '其他';
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(l);
+  }
+  const famNames = ((cat.ui && cat.ui.families) || []).map((f) => f.name).concat(['其他']);
+  const nText = cat.docs.filter((d) => d.s != null).length;
+  const nFiles = cat.docs.filter((d) => d.f).length;
+  const kids = [h('h1', null, '分類'), h('p', { class: 'page-sub' }, `${nText.toLocaleString()} 則文字・${nFiles.toLocaleString()} 個圖片與附件`)];
+  for (const name of famNames) {
+    const lanes = (groups.get(name) || []).sort(byOrder);
+    if (!lanes.length) continue;
+    kids.push(secTitle(name), h('div', { class: 'grid' }, lanes.map((l) => famColor(h('a', { class: 'tile', href: '#/l/' + enc(l) },
+      h('span', { class: 't' }, h('span', { class: 'dot' }), laneName(l)), h('span', { class: 'm' }, `${counts.get(l).toLocaleString()} 則`)), l))));
+  }
+  setView(...kids);
+}
+
+async function viewHistory() {
+  const cat = await catalog();
+  if (!cat) return emptyState();
+  const hist = (await getHistory()).map((x) => [cat.byPath.get(x.p), x.at]).filter((x) => x[0]);
+  const fmt = (t) => new Date(t).toLocaleString('zh-TW', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  const clear = h('button', { type: 'button', class: 'btn quiet' }, '清除紀錄');
+  clear.addEventListener('click', async () => { await kvSet('history', await seal(te.encode('[]'))); viewHistory(); });
+  setView(h('h1', null, '看過'), h('p', { class: 'page-sub' }, '最近打開過的 100 頁，只存在這支手機（加密）。'),
+    listOf(hist.map(([d, at]) => itemLink(d, h('span', { class: 'm' }, `看過 ${fmt(at)}`))), '還沒有看過任何一頁。'),
+    hist.length ? h('div', { class: 'row' }, clear) : null);
 }
 
 async function viewLane(lane) {
@@ -574,7 +656,7 @@ async function viewLane(lane) {
   docs.sort((a, b) => (b.d ? String(b.d) : '').localeCompare(a.d ? String(a.d) : '') || a.p.localeCompare(b.p));
   const list = h('ul', { class: 'list' });
   let shown = 0;
-  const more = h('button', { class: 'more', type: 'button' }, '再多 100 則');
+  const more = h('button', { class: 'btn more', type: 'button' }, '再多 100 則');
   const add = () => {
     for (const d of docs.slice(shown, shown + 100)) list.append(itemLink(d));
     shown = Math.min(docs.length, shown + 100);
@@ -582,13 +664,14 @@ async function viewLane(lane) {
   };
   more.addEventListener('click', add);
   add();
-  setView(h('h1', null, laneName(lane)), h('p', { class: 'muted' }, `${docs.length} 則`), list, more);
+  const head = famColor(h('div', { class: 'doc-head' }, h('h1', null, laneName(lane))), lane);
+  setView(head, h('p', { class: 'page-sub' }, `${docs.length.toLocaleString()} 則・新到舊`), list, more);
 }
 
 // iPhone 實測：www.notion.so 的連結會直接叫起 Notion App（2026-11-02）
 const notionUrl = (nid) => `https://www.notion.so/${nid}`;
 function notionButtons(nid) {
-  return [h('a', { class: 'btn', href: notionUrl(nid), target: '_blank', rel: 'noopener noreferrer' }, 'Notion')];
+  return [h('a', { class: 'btn', href: notionUrl(nid), target: '_blank', rel: 'noopener noreferrer' }, svgIcon('external'), 'Notion')];
 }
 
 async function viewPage(path) {
@@ -596,12 +679,13 @@ async function viewPage(path) {
   if (!cat) return emptyState();
   const d = cat.byPath.get(path);
   if (!d) return setView(h('h1', null, '找不到這一頁'), h('p', { class: 'muted' }, path));
-  const head = h('div', { class: 'doc-head' }, h('div', { class: 'path' }, d.p), h('h1', null, docTitle(d)));
-  const chips = h('div', { class: 'chips' }, [laneName(d.l), d.k, d.d && String(d.d).slice(0, 10), d.a, d.src, d.unrev && '未審']
-    .filter(Boolean).map((x) => h('span', { class: 'chip' }, x)));
+  const head = famColor(h('div', { class: 'doc-head' }, h('div', { class: 'doc-path' }, d.p), h('h1', null, docTitle(d))), d.l);
+  const chips = h('div', { class: 'chips' }, [laneName(d.l), d.k, d.d && String(d.d).slice(0, 10), d.a, d.src]
+    .filter(Boolean).map((x) => h('span', { class: 'tag' }, x)), d.unrev ? h('span', { class: 'tag warn' }, '未審') : null);
+  pushHistory(d.p).catch(() => {});
   const actions = h('div', { class: 'doc-actions' });
   if (d.nid) actions.append(...notionButtons(d.nid));
-  if (d.u && /^https?:/i.test(d.u) && !/(^|\.)notion\.(so|site|com)\//i.test(d.u.replace(/^https?:\/\//, ''))) actions.append(h('a', { class: 'btn', href: d.u, target: '_blank', rel: 'noopener noreferrer' }, '原文'));
+  if (d.u && /^https?:/i.test(d.u) && !/(^|\.)notion\.(so|site|com)\//i.test(d.u.replace(/^https?:\/\//, ''))) actions.append(h('a', { class: 'btn', href: d.u, target: '_blank', rel: 'noopener noreferrer' }, svgIcon('external'), '原文'));
   const body = h('div');
   const ext = extOf(d.p);
   if (d.s != null) {
@@ -630,11 +714,10 @@ async function viewPage(path) {
   const L = await links();
   const outs = (L.out.get(d.p) || []).map((p) => cat.byPath.get(p)).filter((x) => x && x.nid && x.p !== d.p);
   if (outs.length && !d.nid) {
-    kids.push(h('div', { class: 'sec-title' }, `引用的來源（${outs.length}）`),
-      h('ul', { class: 'list' }, outs.slice(0, 60).map((x) => itemLink(x, h('span', { class: 'm' }, h('a', { href: notionUrl(x.nid), target: '_blank', rel: 'noopener noreferrer' }, '在 Notion 開啟'))))));
+    kids.push(secTitle(`引用的來源（${outs.length}）`), listOf(outs.slice(0, 60).map((x) => itemLink(x))));
   }
   const backs = (L.back.get(d.p) || []).map((p) => cat.byPath.get(p)).filter(Boolean);
-  if (backs.length) kids.push(h('div', { class: 'sec-title backlinks' }, `被引用（${backs.length}）`), h('ul', { class: 'list' }, backs.slice(0, 200).map((x) => itemLink(x))));
+  if (backs.length) kids.push(secTitle(`被引用（${backs.length}）`), listOf(backs.slice(0, 200).map((x) => itemLink(x))));
   setView(...kids);
   await hydrateMedia(view);
 }
@@ -678,12 +761,12 @@ async function viewSearch(q) {
   let cands = paths.map((p) => cat.byPath.get(p)).filter(Boolean);
   // 標題命中排前面，其餘依日期新到舊
   cands.sort((a, b) => (docTitle(b).toLowerCase().includes(ql) - docTitle(a).toLowerCase().includes(ql)) || String(b.d || '').localeCompare(String(a.d || '')));
-  const laneCounts = new Map();
-  for (const d of cands) laneCounts.set(d.l, (laneCounts.get(d.l) || 0) + 1);
+  const laneCountsQ = new Map();
+  for (const d of cands) laneCountsQ.set(d.l, (laneCountsQ.get(d.l) || 0) + 1);
   const state = { lane: null };
   const list = h('ul', { class: 'list' });
-  const info = h('p', { class: 'muted' });
-  const chipRow = h('div', { class: 'chips' });
+  const info = h('p', { class: 'page-sub' });
+  const chipRow = h('div', { class: 'filter-row' });
   const render = async () => {
     list.replaceChildren();
     const pool = state.lane ? cands.filter((d) => d.l === state.lane) : cands;
@@ -699,10 +782,10 @@ async function viewSearch(q) {
       list.append(itemLink(d, sn ? h('span', { class: 'snip' }, sn.pre, h('mark', null, sn.hit), sn.post) : null));
     }
     info.textContent = `${pool.length} 則候選，顯示前 ${shown} 則完全符合（${Math.round(performance.now() - t0)} ms）`;
-    if (!shown) list.append(h('li', null, h('p', { class: 'muted' }, '沒有完全符合的結果。')));
+    if (!shown) list.append(h('li', { class: 'empty' }, '沒有完全符合的結果。'));
   };
-  chipRow.append(h('button', { type: 'button', class: 'chip', 'aria-pressed': 'true', onclick: (e) => pick(e, null) }, `全部 ${cands.length}`),
-    ...[...laneCounts].sort((a, b) => b[1] - a[1]).map(([l, c]) => h('button', { type: 'button', class: 'chip', 'aria-pressed': 'false', onclick: (e) => pick(e, l) }, `${laneName(l)} ${c}`)));
+  chipRow.append(h('button', { type: 'button', class: 'filter', 'aria-pressed': 'true', onclick: (e) => pick(e, null) }, `全部 ${cands.length}`),
+    ...[...laneCountsQ].sort((a, b) => b[1] - a[1]).map(([l, c]) => famColor(h('button', { type: 'button', class: 'filter', 'aria-pressed': 'false', onclick: (e) => pick(e, l) }, h('span', { class: 'dot' }), `${laneName(l)} ${c}`), l)));
   function pick(e, lane) {
     state.lane = lane;
     chipRow.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b === e.currentTarget)));
@@ -722,9 +805,9 @@ async function viewSettings() {
   const cfg = await getConfig();
   const repo = h('input', { id: 'cfg-repo', type: 'text', autocomplete: 'off', autocapitalize: 'off', spellcheck: 'false', placeholder: 'owner/repo', value: cfg.repo || '' });
   const token = h('input', { id: 'cfg-token', type: 'password', autocomplete: 'off', autocapitalize: 'off', spellcheck: 'false', placeholder: cfg.token ? '（已存，留空表示不變）' : 'github_pat_…' });
-  const out = h('p', { class: 'muted', role: 'status' });
+  const out = h('p', { class: 'status', role: 'status' });
   const prog = h('progress', { max: '100', value: '0', hidden: true });
-  const checkBtn = h('button', { type: 'button', class: 'primary' }, '檢查更新');
+  const checkBtn = h('button', { type: 'button', class: 'btn primary' }, svgIcon('sync'), '檢查更新');
   const choice = h('div', { class: 'row', hidden: true });
   const info = h('dl', { class: 'kv' });
   const fillInfo = async () => {
@@ -772,61 +855,55 @@ async function viewSettings() {
       const total = plan.textBytes + plan.mediaBytes;
       if (!plan.want.length && !plan.stale.length) { out.textContent = '已是最新，沒有要下載的。'; return; }
       out.textContent = `這次要下載 ${plan.want.length} 個檔、共 ${fmtMB(total)}：文字與索引 ${fmtMB(plan.textBytes)}，圖片與附件 ${fmtMB(plan.mediaBytes)}。`;
-      choice.replaceChildren(h('button', { type: 'button', class: 'primary', onclick: () => doSync(plan, false) }, `全部下載（${fmtMB(total)}）`));
-      if (plan.mediaFiles) choice.append(h('button', { type: 'button', onclick: () => doSync(plan, true) }, `只下載文字（${fmtMB(plan.textBytes)}）`));
+      choice.replaceChildren(h('button', { type: 'button', class: 'btn primary', onclick: () => doSync(plan, false) }, `全部下載（${fmtMB(total)}）`));
+      if (plan.mediaFiles) choice.append(h('button', { type: 'button', class: 'btn', onclick: () => doSync(plan, true) }, `只下載文字（${fmtMB(plan.textBytes)}）`));
       choice.hidden = false;
     } catch (e) {
       out.textContent = e.status === 401 ? 'token 無效或已過期，請貼上新的 token。' : e.status === 404 ? '找不到 repo：名稱錯誤或 token 沒授權。' : '檢查失敗：' + (e.message || e);
     } finally { checkBtn.disabled = false; }
   });
-  const lockBtn = h('button', { type: 'button', onclick: () => { lockNow(); route(); } }, '立刻上鎖');
-  const clearBtn = h('button', { type: 'button' }, '刪除手機上的全部資料');
+  const lockBtn = h('button', { type: 'button', class: 'btn', onclick: () => { lockNow(); route(); } }, svgIcon('lock'), '立刻上鎖');
+  const clearBtn = h('button', { type: 'button', class: 'btn quiet danger' }, '刪除手機上的全部資料');
   clearBtn.addEventListener('click', async () => {
     if (!confirm('刪除這支手機上的全部資料、token 與開啟鎖設定？（資料 repo 不受影響，之後可以重新同步）')) return;
     await wipeAll();
     location.hash = '#/';
     route();
   });
-  setView(h('h1', null, '設定與同步'),
+  setView(h('h1', null, '同步與設定'),
     h('div', { class: 'card' },
       h('div', { class: 'field' }, h('label', { for: 'cfg-repo' }, '資料 repo（擁有者/名稱）'), repo),
       h('div', { class: 'field' }, h('label', { for: 'cfg-token' }, '唯讀 token'), token),
       h('div', { class: 'row' }, checkBtn), out, choice, prog),
-    h('div', { class: 'card' }, info),
+    secTitle('這支手機'), h('div', { class: 'card' }, info),
     h('p', { class: 'muted' }, '只下載有變動的檔。repo 名稱與 token 只存在這支手機，token 與所有資料都以 Face ID 導出的金鑰加密。token 到期後在這裡貼上新的即可。'),
     h('div', { class: 'row' }, lockBtn, clearBtn));
   fillInfo();
 }
 
-async function viewSetupLock() {
-  const out = h('p', { class: 'muted', role: 'status' });
-  const btn = h('button', { type: 'button', class: 'primary' }, '用 Face ID 建立開啟鎖');
+function lockScreen(title, text, btnLabel, action, extra) {
+  const out = h('p', { class: 'status', role: 'status' });
+  const btn = h('button', { type: 'button', class: 'btn primary' }, svgIcon('lock'), btnLabel);
   btn.addEventListener('click', async () => {
     btn.disabled = true; out.textContent = '';
-    try { await setupLock(); location.hash = '#/settings'; route(); }
-    catch (e) { out.textContent = '建立失敗：' + (e.name === 'NotAllowedError' ? '取消了，或逾時' : (e.message || e)); btn.disabled = false; }
+    try { await action(); route(); }
+    catch (e) { out.textContent = '沒有成功：' + (e.name === 'NotAllowedError' ? '取消了，或逾時' : (e.message || e)); btn.disabled = false; }
   });
-  setView(h('h1', null, '先設定開啟鎖'),
-    h('p', null, '手機上的資料會用 Face ID 導出的金鑰加密，沒有你的臉就讀不到。接下來 iOS 會問你要不要把「OM Reader」的通行金鑰存進「密碼」，請同意。'),
-    h('div', { class: 'row' }, btn), out);
+  setView(h('div', { class: 'lock' }, h('img', { src: 'icons/icon-192.png', alt: '' }), h('h1', null, title),
+    text ? h('p', { class: 'muted' }, text) : null, btn, out, extra || null));
+  btn.focus();
 }
-
+async function viewSetupLock() {
+  lockScreen('先設定開啟鎖', '手機上的資料會用 Face ID 導出的金鑰加密，沒有你的臉就讀不到。接下來 iOS 會問你要不要把「OM Reader」的通行金鑰存進「密碼」，請同意。',
+    '用 Face ID 建立開啟鎖', async () => { await setupLock(); location.hash = '#/settings'; });
+}
 async function viewLock() {
-  const out = h('p', { class: 'muted', role: 'status' });
-  const btn = h('button', { type: 'button', class: 'primary' }, '用 Face ID 解鎖');
-  btn.addEventListener('click', async () => {
-    btn.disabled = true; out.textContent = '';
-    try { await unlock(); route(); }
-    catch (e) { out.textContent = '解鎖失敗：' + (e.name === 'NotAllowedError' ? '取消了，或逾時' : (e.message || e)); btn.disabled = false; }
-  });
-  const reset = h('button', { type: 'button' }, '重設（刪除手機上的資料）');
+  const reset = h('button', { type: 'button', class: 'btn quiet' }, '解不開？重設這支手機');
   reset.addEventListener('click', async () => {
     if (!confirm('找不到通行金鑰或一直解不開時才用：刪除這支手機上的全部資料，重新設定開啟鎖、重新同步。資料 repo 不受影響。')) return;
     await wipeAll(); route();
   });
-  setView(h('h1', null, 'OM Reader 已上鎖'), h('div', { class: 'row' }, btn), out,
-    h('p', { class: 'muted more' }, '通行金鑰不見了（例如在「密碼」裡刪掉）就解不開，這時只能重設再同步一次。'), h('div', { class: 'row' }, reset));
-  btn.focus();
+  lockScreen('OM Reader', null, '用 Face ID 解鎖', unlock, reset);
 }
 
 /* ════════ 路由 ════════ */
@@ -836,9 +913,15 @@ async function route() {
     if (!window.PublicKeyCredential || !window.crypto || !crypto.subtle) {
       return setView(h('h1', null, '這個瀏覽器不支援'), h('p', null, '需要通行金鑰與 Web Crypto（iOS 18 的 Safari／主畫面 App 都有）。'));
     }
-    if (!(await kvGet('lock'))) return viewSetupLock();
+    const hasLock = !!(await kvGet('lock'));
+    const locked = !hasLock || !KEY;
+    document.body.classList.toggle('locked', locked);
+    updateChrome(hash, locked);
+    if (!hasLock) return viewSetupLock();
     if (!KEY) return viewLock();
-    if (hash.startsWith('#/p/')) await viewPage(dec(hash.slice(4)));
+    if (hash.startsWith('#/browse')) await viewBrowse();
+    else if (hash.startsWith('#/history')) await viewHistory();
+    else if (hash.startsWith('#/p/')) await viewPage(dec(hash.slice(4)));
     else if (hash.startsWith('#/l/')) await viewLane(dec(hash.slice(4)));
     else if (hash.startsWith('#/s/')) await viewSearch(decodeURIComponent(hash.slice(4)));
     else if (hash.startsWith('#/settings')) await viewSettings();
@@ -853,6 +936,37 @@ $('#qform').addEventListener('submit', (e) => {
   if (q) location.hash = '#/s/' + encodeURIComponent(q);
   $('#q').blur();
 });
-window.addEventListener('hashchange', route);
+// 頂列：深層頁（文章、清單、搜尋）顯示「上一頁」；底部分頁標出目前位置
+let navDepth = 0;
+window.addEventListener('hashchange', () => { navDepth++; route(); });
+function updateChrome(hash, locked) {
+  const deep = /^#\/(p|l|s)\//.test(hash);
+  $('#back').hidden = locked || !deep || navDepth === 0;
+  $('#brand').hidden = !$('#back').hidden;
+  const tab = hash.startsWith('#/browse') || hash.startsWith('#/l/') ? 'browse'
+    : hash.startsWith('#/history') ? 'history'
+      : hash.startsWith('#/settings') ? 'settings'
+        : hash.startsWith('#/p/') || hash.startsWith('#/s/') ? null : 'home';
+  document.querySelectorAll('.tabs a').forEach((a) => {
+    if (a.dataset.tab === tab) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
+  });
+}
+$('#back').addEventListener('click', () => { navDepth = Math.max(0, navDepth - 2); history.back(); });
+// 明暗：跟隨系統 → 淺色 → 深色（選擇只存在這台裝置）
+const THEMES = [['auto', '跟隨系統'], ['light', '淺色'], ['dark', '深色']];
+function applyTheme(t) {
+  if (t === 'auto') document.documentElement.removeAttribute('data-theme'); else document.documentElement.setAttribute('data-theme', t);
+  try { if (t === 'auto') localStorage.removeItem('om-reader-theme'); else localStorage.setItem('om-reader-theme', t); } catch (e) { /* 略過 */ }
+  const btn = $('#theme');
+  btn.querySelector('use').setAttribute('href', '#i-' + (t === 'auto' ? 'auto' : t === 'light' ? 'sun' : 'moon'));
+  btn.setAttribute('aria-label', '明暗：' + THEMES.find((x) => x[0] === t)[1]);
+}
+let themeNow = document.documentElement.getAttribute('data-theme') || 'auto';
+applyTheme(themeNow);
+$('#theme').addEventListener('click', () => {
+  themeNow = THEMES[(THEMES.findIndex((x) => x[0] === themeNow) + 1) % THEMES.length][0];
+  applyTheme(themeNow);
+});
+
 route();
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
