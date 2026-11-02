@@ -71,7 +71,7 @@ svg.i { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-widt
   border-bottom: 1px solid var(--line);
 }
 .brand { display: inline-flex; align-items: center; justify-content: center; min-width: var(--hit); min-height: var(--hit); }
-.brand svg.i { width: 28px; height: 28px; color: var(--accent); stroke-width: 1.5; }
+.brand .mark { width: 28px; height: 28px; background: var(--accent); -webkit-mask: url("icons/mark.png") center / contain no-repeat; mask: url("icons/mark.png") center / contain no-repeat; }
 .icon-btn {
   min-width: var(--hit); min-height: var(--hit); display: inline-flex; align-items: center; justify-content: center; padding: 0;
   color: var(--fg); background: transparent; border: 0; border-radius: var(--r-btn); cursor: pointer;

@@ -243,19 +243,51 @@ def _mandala(S, bg, line_color, center_dye=None, step=2, spike_out=0.93):
     return bg
 
 
+REF_MARK = os.path.join(HERE, "ref", "notion-mark.png")   # 本人 Notion 頁面的符號原檔（250×250，黑線透明底；2026-11-02 本人提供）
+
+
+def traced_mark(S, diameter):
+    """把本人的原圖當描圖底稿：取透明通道 → 放大到 diameter → 二值化去掉放大的糊邊 → 微柔化抗鋸齒。
+    回傳 (線條 mask, 中央空洞 mask)，都是 S×S、置中的 L 圖。"""
+    src = Image.open(REF_MARK).convert("RGBA").getchannel("A")
+    bbox = src.getbbox()
+    src = src.crop(bbox)
+    d = int(round(diameter))
+    up = src.resize((d, d), Image.LANCZOS).filter(ImageFilter.GaussianBlur(d / 600))
+    up = up.point(lambda v: 255 if v >= 128 else 0).filter(ImageFilter.GaussianBlur(max(1.0, d / 900)))
+    line = Image.new("L", (S, S), 0)
+    off = ((S - d) // 2, (S - d) // 2)
+    line.paste(up, off)
+    # 中央空洞：從圓心往外填滿「沒有線」的連通區
+    hole = line.point(lambda v: 255 if v < 128 else 0)
+    flood = hole.copy()
+    ImageDraw.floodfill(flood, (S // 2, S // 2), 128)
+    hole = flood.point(lambda v: 255 if v == 128 else 0).filter(ImageFilter.MaxFilter(5))
+    return line, hole
+
+
+def _traced(S, bg, line_color, center_dye=None):
+    line, hole = traced_mark(S, S * 0.70)
+    if center_dye:
+        put_dye_mask(bg, hole, DYES[center_dye], seed=8)
+    ink = Image.new("RGB", (S, S), rgb(line_color))
+    bg.paste(ink, (0, 0), line)
+    return bg
+
+
 def draw_D(S, bg):
-    """D 本人的符號（兩個方形交疊的八角星，墨線）＋中央八邊形染桑葚紫。"""
-    return _mandala(S, bg, INK, center_dye="mulberry", step=2, spike_out=0.93)
+    """D 本人的符號（照原圖描；墨線）＋中央八邊形染桑葚紫。"""
+    return _traced(S, bg, INK, center_dye="mulberry")
 
 
 def draw_D3(S, bg):
-    """D 的另一種星形：{8/3}（線交叉較多、中央八邊形較小），短輻同樣從八邊形頂點往外。"""
+    """（舊）幾何重建版，保留作對照。"""
     return _mandala(S, bg, INK, center_dye="mulberry", step=3, spike_out=0.80)
 
 
 def draw_E(S, bg):
-    """E 本人的符號，整個用桑葚紫一色（像 Notion 上的單色圖示），不另加染色塊。"""
-    return _mandala(S, bg, DYES["mulberry"])
+    """E 本人的符號（照原圖描），整個用桑葚紫一色（像 Notion 上的單色圖示），不另加染色塊。"""
+    return _traced(S, bg, DYES["mulberry"])
 
 
 DRAW = {"A": draw_A, "B": draw_B, "C": draw_C, "D": draw_D, "D3": draw_D3, "E": draw_E}
