@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="zh-Hant-TW">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- 只在 sandbox（不透明來源）的 iframe 裡使用：讀不到 App 的儲存與 token。
+     連線一律禁止（connect-src 'none'）；圖片放行 https 以便地圖圖磚等資源。 -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'unsafe-inline'; img-src data: blob: https:; font-src data:; media-src data: blob:; connect-src 'none'; frame-src 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<title>HTML 檢視</title>
+<script src="viewer.js"></script>
+</head>
+<body></body>
+</html>
