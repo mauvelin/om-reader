@@ -215,36 +215,42 @@ def draw_C(S, bg):
     return bg
 
 
-def _mandala(S, bg, line_color, center_dye=None):
-    """本人 Notion 頁面用的符號：圓環內一個 {8/3} 八角星（頂點在圓環上），每個頂點再往內一根短輻
-    （和兩條邊合成「\\|/」三叉）；星的邊在中央圍出一個八邊形。"""
+def _mandala(S, bg, line_color, center_dye=None, step=2, spike_out=0.93):
+    """本人 Notion 頁面用的符號：圓環內一個八角星（頂點在圓環上，每個頂點連到隔 step 個的頂點；
+    step=2 是兩個方形交疊、step=3 是 {8/3}），星的邊在中央圍出一個八邊形；
+    八邊形的每個頂點再往外伸一根短輻（本人 2026-11-02 指正：短輻是從八邊形頂點往外，不是從圓環往內）。"""
     cx = cy = S / 2
     R = S * 0.335
     lw = max(3, round(S * 0.022))
     ang = lambda k, off: math.radians(-90 + off + 45 * k)
     vs = [(cx + R * math.cos(ang(k, 22.5)), cy + R * math.sin(ang(k, 22.5))) for k in range(8)]
+    r0 = R * math.cos(step * math.pi / 8) / math.cos(math.pi / 8)       # 中央八邊形的頂點半徑
     if center_dye:
-        r_oct = R * math.cos(3 * math.pi / 8) / math.cos(math.pi / 8)   # 中央八邊形的頂點半徑（0.414R）
-        octo = [(cx + r_oct * math.cos(ang(k, 0)), cy + r_oct * math.sin(ang(k, 0))) for k in range(8)]
+        octo = [(cx + r0 * math.cos(ang(k, 0)), cy + r0 * math.sin(ang(k, 0))) for k in range(8)]
         mask = Image.new("L", (S, S), 0)
         ImageDraw.Draw(mask).polygon(octo, fill=255)
         put_dye_mask(bg, mask, DYES[center_dye], seed=8)
     d = ImageDraw.Draw(bg)
     col = rgb(line_color)
     for k in range(8):
-        d.line([vs[k], vs[(k + 3) % 8]], fill=col, width=lw)
+        d.line([vs[k], vs[(k + step) % 8]], fill=col, width=lw)
     for k in range(8):
-        a = ang(k, 22.5)
-        d.line([(cx + R * math.cos(a), cy + R * math.sin(a)),
-                (cx + R * 0.64 * math.cos(a), cy + R * 0.64 * math.sin(a))], fill=col, width=lw)
+        a = ang(k, 0)
+        d.line([(cx + r0 * math.cos(a), cy + r0 * math.sin(a)),
+                (cx + R * spike_out * math.cos(a), cy + R * spike_out * math.sin(a))], fill=col, width=lw)
     ring = max(4, round(S * 0.034))
     d.ellipse([cx - R - ring * 0.35, cy - R - ring * 0.35, cx + R + ring * 0.35, cy + R + ring * 0.35], outline=col, width=ring)
     return bg
 
 
 def draw_D(S, bg):
-    """D 本人的符號（墨線）＋中央八邊形染桑葚紫。"""
-    return _mandala(S, bg, INK, center_dye="mulberry")
+    """D 本人的符號（兩個方形交疊的八角星，墨線）＋中央八邊形染桑葚紫。"""
+    return _mandala(S, bg, INK, center_dye="mulberry", step=2, spike_out=0.93)
+
+
+def draw_D3(S, bg):
+    """D 的另一種星形：{8/3}（線交叉較多、中央八邊形較小），短輻同樣從八邊形頂點往外。"""
+    return _mandala(S, bg, INK, center_dye="mulberry", step=3, spike_out=0.80)
 
 
 def draw_E(S, bg):
@@ -252,7 +258,7 @@ def draw_E(S, bg):
     return _mandala(S, bg, DYES["mulberry"])
 
 
-DRAW = {"A": draw_A, "B": draw_B, "C": draw_C, "D": draw_D, "E": draw_E}
+DRAW = {"A": draw_A, "B": draw_B, "C": draw_C, "D": draw_D, "D3": draw_D3, "E": draw_E}
 
 
 def icon(kind, size, tile="square"):
