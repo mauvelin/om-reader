@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="zh-Hant-TW">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https://www.googleapis.com; media-src 'self' blob: https://www.googleapis.com; frame-src 'self' blob:; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex, nofollow">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="OM 影音">
+<meta name="theme-color" content="#f8f6f1" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#16171b" media="(prefers-color-scheme: dark)">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="../icons/icon-180.png">
+<link rel="stylesheet" href="../probe.css">
+<link rel="stylesheet" href="media.css">
+<title>OM 影音測試</title>
+</head>
+<body>
+<main>
+  <header class="top">
+    <h1>OM 影音測試頁</h1>
+    <p class="muted">驗證「在 App 裡播放雲端硬碟的課程影片、音訊與講義，同時保留到雲端硬碟 App 播放」。
+    請先用 Safari「分享 → 加入主畫面」，<strong>從主畫面的「OM 影音」圖示打開</strong>再測。iPhone 和 iPad 各測一次。</p>
+  </header>
+
+  <section class="card">
+    <h2>0　環境</h2>
+    <dl id="env" class="kv"></dl>
+  </section>
+
+  <section class="card">
+    <h2>1　Google 登入</h2>
+    <p class="muted">整頁跳到 Google 登入再跳回來，不載入任何 Google 程式。權限：雲端硬碟唯讀＋只能寫這個 App 自己建立的檔。
+    token 只放在記憶體（約 1 小時失效），不寫進這支手機的儲存空間。</p>
+    <div class="field">
+      <label for="g-client">OAuth 用戶端 ID（只存在這支手機）</label>
+      <input id="g-client" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="….apps.googleusercontent.com">
+    </div>
+    <div class="row">
+      <button id="g-login" type="button" class="primary">登入 Google</button>
+      <button id="g-silent" type="button">靜默續期（不跳畫面）</button>
+    </div>
+    <dl id="g-info" class="kv"></dl>
+    <ol id="g-out" class="steps"></ol>
+  </section>
+
+  <section class="card">
+    <h2>2　找檔案</h2>
+    <p class="muted">輸入檔名（跟學習網站的媒體檔名一樣）或貼雲端硬碟網址。App 之後就是用檔名到雲端硬碟找檔。</p>
+    <div class="field">
+      <label for="f-q">檔名或雲端硬碟網址</label>
+      <input id="f-q" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="瑜伽老師學習指南｜00.01.課程介紹.mp4">
+    </div>
+    <div class="row">
+      <button id="f-find" type="button" class="primary">找</button>
+      <button id="f-stats" type="button">統計雲端硬碟影音格式</button>
+    </div>
+    <dl id="f-info" class="kv"></dl>
+    <ol id="f-out" class="steps"></ol>
+  </section>
+
+  <section class="card">
+    <h2>3　在 App 裡播放</h2>
+    <p class="muted">播放器只連同源網址，由 Service Worker 帶上 token 轉給雲端硬碟。請測：開始播放、拖到中間、拖到結尾前、暫停幾分鐘再播；
+    有空的話放一支 70 分鐘以上的影片，播過 token 到期的時間點，看會怎樣。</p>
+    <div class="player"><video id="v" controls playsinline preload="metadata"></video></div>
+    <div class="row">
+      <button id="p-load" type="button" class="primary">載入</button>
+      <button id="p-mid" type="button">跳到 50%</button>
+      <button id="p-end" type="button">跳到結尾前 1 分鐘</button>
+      <button id="p-kill" type="button">模擬 token 失效</button>
+      <button id="p-relogin" type="button">重新登入並回到目前時間</button>
+    </div>
+    <dl id="p-info" class="kv"></dl>
+    <ol id="p-log" class="steps log"></ol>
+  </section>
+
+  <section class="card">
+    <h2>4　備案：直接網址</h2>
+    <p class="muted">不經 Service Worker，把 token 放在網址上直接給播放器。只用來比較；正式版不會這樣做。</p>
+    <div class="player"><video id="v2" controls playsinline preload="metadata"></video></div>
+    <div class="row"><button id="d-load" type="button">載入</button></div>
+    <ol id="d-out" class="steps"></ol>
+  </section>
+
+  <section class="card">
+    <h2>5　背景、鎖定螢幕、墊旁</h2>
+    <p class="muted">用第 3 節的播放器（影片或音訊檔都可以）。開始播放後：① 鎖定螢幕 3 分鐘再打開；② 切到別的 App 3 分鐘再回來。
+    這裡會記下離開多久、期間播了多少秒。</p>
+    <div class="row">
+      <button id="b-wake" type="button">保持螢幕亮著（墊旁模式）</button>
+    </div>
+    <ol id="b-out" class="steps"></ol>
+  </section>
+
+  <section class="card">
+    <h2>6　到雲端硬碟播放</h2>
+    <p class="muted">先在第 2 節找到檔案。點下面的連結，回來後按實際發生的情況。</p>
+    <ul id="l-links" class="links"></ul>
+    <div class="chips" id="l-chips"></div>
+  </section>
+
+  <section class="card">
+    <h2>7　講義 PDF</h2>
+    <p class="muted">在第 2 節找一份講義 PDF，下載後用三種方式打開，各回報一次。</p>
+    <div class="row">
+      <button id="pdf-get" type="button" class="primary">下載這份 PDF</button>
+      <button id="pdf-frame" type="button">在頁面內顯示</button>
+      <button id="pdf-tab" type="button">開新視窗</button>
+    </div>
+    <div id="pdf-box" class="pdfbox" hidden></div>
+    <ol id="pdf-out" class="steps"></ol>
+    <div class="chips" id="pdf-chips"></div>
+  </section>
+
+  <section class="card">
+    <h2>8　寫回雲端硬碟（練習紀錄、學習進度）</h2>
+    <p class="muted">在雲端硬碟建資料夾「OM App 測試」，寫一個紀錄檔、改一次、讀回來比對。之後請到電腦的
+    G:\我的雲端硬碟\OM App 測試\ 看檔案有沒有出現、內容對不對。</p>
+    <div class="row">
+      <button id="w-run" type="button" class="primary">開始測試</button>
+    </div>
+    <ol id="w-out" class="steps"></ol>
+    <div class="chips" id="w-chips"></div>
+  </section>
+
+  <section class="card">
+    <h2>9　結果</h2>
+    <p class="muted">測完按「複製結果」貼回給 Claude。內容不含 token、用戶端 ID、檔名與檔案 ID。</p>
+    <textarea id="summary" rows="16" readonly></textarea>
+    <div class="row"><button id="copy" type="button" class="primary">複製結果</button></div>
+    <p id="copy-out" class="out" role="status"></p>
+  </section>
+</main>
+<script src="media.js"></script>
+</body>
+</html>
