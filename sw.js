@@ -3,9 +3,9 @@
 // 殼層靜態檔 cache-first；跨網域請求（api.github.com）完全不經手。
 // 殼層檔案有改，CACHE_VERSION 往前推一號。
 // 另外代理同源的 drive-media/<檔案 ID>：帶上記憶體裡的 Google token 與 Range 轉給 Drive API（見檔尾）。
-const CACHE_VERSION = 'om-reader-v15';
-const SHELL = ['./', './index.html', './theme.js', './core.js', './google.js', './drive.js', './player.js', './reader.js', './courses.js', './app.js', './app.css', './viewer.html', './viewer.js',
-  './vendor/markdown-it.min.js', './vendor/purify.min.js', './vendor/learn-text.js', './manifest.webmanifest',
+const CACHE_VERSION = 'om-reader-v16';
+const SHELL = ['./', './index.html', './theme.js', './core.js', './google.js', './drive.js', './player.js', './reader.js', './pdfview.js', './courses.js', './app.js', './app.css', './viewer.html', './viewer.js',
+  './vendor/markdown-it.min.js', './vendor/purify.min.js', './vendor/learn-text.js', './vendor/pdfjs/pdf.min.js', './vendor/pdfjs/pdf.worker.min.js', './manifest.webmanifest',
   './icons/icon-180.png', './icons/icon-192.png', './icons/icon-512.png', './icons/favicon-32.png', './icons/mark.png', './icons/mark-center.png'];
 
 self.addEventListener('install', (event) => {
@@ -29,6 +29,14 @@ self.addEventListener('fetch', (event) => {
   if (req.mode === 'navigate') {
     const key = url.pathname.endsWith('/viewer.html') ? './viewer.html' : './index.html';
     event.respondWith(networkFirst(event, req, key));
+    return;
+  }
+  // pdf.js 的字型對照表與標準字型：用到才下載，下載後留在快取（離線也能顯示中文 PDF）
+  if (url.pathname.includes('/vendor/pdfjs/')) {
+    event.respondWith(caches.match(req).then((hit) => hit || fetch(req).then(async (res) => {
+      if (res && res.ok) { const c = await caches.open(CACHE_VERSION); await c.put(req, res.clone()); }
+      return res;
+    })));
     return;
   }
   event.respondWith(caches.match(req, { ignoreSearch: true }).then((hit) => hit || fetch(req)));

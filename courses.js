@@ -117,19 +117,32 @@ async function viewCourses(cat, lane) {
   const ci = await courseIndex();
   if (!ci) return setView(h('h1', null, '找不到課程索引'), h('p', null, '資料包裡沒有 _courses.json，請先同步。'));
   await lrec();
+  // 只有筆記、沒有講次的課：預設不列，開關打開才列（learn 的 U8；本人 2026-11-03：做成開關）
+  const notesOnly = (c) => !(c.stats && c.stats.lessons) && !c.lessons.length;
+  const showNotesOnly = (() => { try { return localStorage.getItem('om-notes-only') === '1'; } catch (e) { return false; } })();
+  const nNotesOnly = ci.list.filter(notesOnly).length;
   const byCat = new Map();
-  for (const c of ci.list) { const k = c.category || '其他'; if (!byCat.has(k)) byCat.set(k, []); byCat.get(k).push(c); }
+  for (const c of ci.list) {
+    if (notesOnly(c) && !showNotesOnly) continue;
+    const k = c.category || '其他'; if (!byCat.has(k)) byCat.set(k, []); byCat.get(k).push(c);
+  }
   const inCourse = new Set(ci.list.flatMap((c) => [...c.lessons.map((l) => vp(l.transcript && l.transcript.md)), ...c.handouts.map((x) => vp(x.md)), ...c.notes.map((x) => vp(x.md))]));
   const loose = cat.docs.filter((d) => d.l === lane && d.s != null && !inCourse.has(d.p) && !isAux(d));
   const total = ci.list.reduce((n, c) => n + c.lessons.length, 0);
   const kids = [h('div', { class: 'doc-head' }, h('h1', null, laneName(lane))),
-    h('p', { class: 'page-sub' }, `${laneLabel(lane) ? laneLabel(lane) + '・' : ''}${ci.list.length} 門課・${total} 講・依課程`)];
+    h('p', { class: 'page-sub' }, `${laneLabel(lane) ? laneLabel(lane) + '・' : ''}${ci.list.length} 門課・${total} 講・依課程`), courseSearchBox(null)];
+  if (nNotesOnly) {
+    const box = h('input', { type: 'checkbox', id: 'notes-only' });
+    box.checked = showNotesOnly;
+    box.addEventListener('change', () => { try { localStorage.setItem('om-notes-only', box.checked ? '1' : '0'); } catch (e) { /* 略過 */ } viewCourses(cat, lane); });
+    kids.push(h('label', { class: 'check', for: 'notes-only' }, box, `也顯示只有筆記、沒有講次的課（${nNotesOnly} 門）`));
+  }
   for (const [k, list] of [...byCat].sort((a, b) => b[1].length - a[1].length)) {
     kids.push(h('div', { class: 'sec-title' }, h('span', null, areaColor(h('span', { class: 'sec-dot' }), null, k), k)),
       listOf(list.map((c) => {
         const done = c.lessons.filter((l) => (lessonProgress(l) || {}).completed).length;
         return h('li', null, areaColor(h('a', { class: 'item', href: '#/course/' + encodeURIComponent(c.id) }, h('span', { class: 't' }, c.title),
-          h('span', { class: 'm' }, `${c.lessons.length} 講${done ? `・已看完 ${done}` : ''}${c.handouts.length ? `・講義 ${c.handouts.length}` : ''}${c.notes.length ? `・我的筆記 ${c.notes.length}` : ''}`)), null, c.category));
+          h('span', { class: 'm' }, `${notesOnly(c) ? '只有筆記' : `${c.lessons.length} 講`}${done ? `・已看完 ${done}` : ''}${c.handouts.length ? `・講義 ${c.handouts.length}` : ''}${c.notes.length ? `・我的筆記 ${c.notes.length}` : ''}`)), null, c.category));
       })));
   }
   if (loose.length) kids.push(h('details', { class: 'aux' }, h('summary', null, `不屬於任何課程（${loose.length}）`), listOf(loose.map((d) => itemLink(d)))));
@@ -178,6 +191,7 @@ async function viewCourseById(id, qs) {
   const tabs = [['lessons', '講次'], ['digest', '整門課摘要']];
   if (c.handouts.length) tabs.push(['handouts', `講義（${c.handouts.length}）`]);
   if (c.notes.length) tabs.push(['notes', `我的筆記（${c.notes.length}）`]);
+  tabs.push(['search', '搜尋本課']);
   const pane = h('div', { class: 'tab-pane' });
   const show = async (k) => {
     setQs('tab', k === 'lessons' ? null : k);
@@ -186,6 +200,7 @@ async function viewCourseById(id, qs) {
     else if (k === 'digest') pane.replaceChildren(await courseDigest(c));
     else if (k === 'handouts') pane.replaceChildren(listOf(c.handouts.map((x) => cat.byPath.get(vp(x.md))).filter(Boolean).map((d) => itemLink(d))));
     else if (k === 'notes') pane.replaceChildren(listOf(c.notes.map((x) => cat.byPath.get(vp(x.md))).filter(Boolean).map((d) => itemLink(d))));
+    else if (k === 'search') { const box = courseSearchBox(c); pane.replaceChildren(box); box.querySelector('input').focus(); }
   };
   let cur = qsTab(qs, 'lessons');
   if (!tabs.some((t) => t[0] === cur)) cur = 'lessons';
@@ -320,8 +335,9 @@ async function viewLesson(id, qs) {
       const t = await textOf(x.md);
       const d = CAT.byPath.get(vp(x.md));
       const row = h('div', { class: 'row' }, d ? h('a', { class: 'btn quiet', href: pageHref(d.p) }, '單獨開啟') : null);
-      if (x.pdf_key && s.enabled) row.append(h('button', { type: 'button', class: 'btn', onclick: () => openDrivePdf(x.pdf_key, row) }, svgIcon('external'), '原檔 PDF'));
-      box.append(h('section', { class: 'handout' }, h('h3', null, x.handout_title || x.title), row,
+      const pdfBox = h('div', { class: 'pdf-view' });
+      if (x.pdf_key && s.enabled) row.append(h('button', { type: 'button', class: 'btn', onclick: (e) => openDrivePdf(x.pdf_key, row, pdfBox, e.currentTarget) }, '原檔 PDF'));
+      box.append(h('section', { class: 'handout' }, h('h3', null, x.handout_title || x.title), row, pdfBox,
         t ? learnHtml(asHtml(LearnText.renderMarkdown(t, x.body_start_line || 1))) : h('p', { class: 'muted' }, '講義文字還沒同步。')));
     }
     return box;
@@ -422,9 +438,19 @@ async function viewLesson(id, qs) {
     next ? h('a', { class: 'btn', href: '#/lesson/' + next.id, 'aria-label': `下一講 ${next.order || ''}` }, next.order || '下一講', svgIcon('chev')) : h('span'));
   const head = areaColor(h('div', { class: 'doc-head' }, h('nav', { class: 'crumb' }, h('a', { href: '#/course/' + encodeURIComponent(c.id) }, c.title)),
     h('h1', null, l.lesson_title || l.title)), null, c.category);
-  setView(head, h('p', { class: 'page-sub' }, [l.order, l.series, l.date].filter(Boolean).join('・')), media,
-    tabBar(tabs, cur, show), pane, back, toc, nav);
+  // iPad 等寬螢幕：左欄播放（固定不捲走）、右欄逐字稿與其他分頁；iPhone 照常單欄（CSS 決定）
+  setView(head, h('p', { class: 'page-sub' }, [l.order, l.series, l.date].filter(Boolean).join('・')),
+    h('div', { class: 'lesson-layout' }, h('div', { class: 'lesson-left' }, media), h('div', { class: 'lesson-right' }, tabBar(tabs, cur, show), pane)),
+    back, toc, nav);
+  document.body.classList.add('wide-page');
+  sig.addEventListener('abort', () => document.body.classList.remove('wide-page'));
   await show(cur);
+  if (startT) {
+    const segs = [...pane.querySelectorAll('.seg[data-t]')];
+    let target = null;
+    for (const n of segs) { if (Number(n.dataset.t) <= startT) target = n; else break; }
+    if (target) { target.classList.add('flash'); requestAnimationFrame(() => target.scrollIntoView({ block: 'center' })); }
+  }
 
   // 播放畫面：這一講的播放器已經在跑（例如從底部小播放器點回來）就借進來；之後才開的，開好會自己借進來
   PLAYER_SLOT = key ? { name: key, el: slot } : null;
@@ -499,6 +525,88 @@ async function copyText(text) {
   }
 }
 
+/* ── 課程內搜尋（learn 的規則：全部課程最多列 200 處並顯示總數；摘要句排前面；筆記保留名額；
+   命中逐字稿就連到那一講的那一秒）。先用 App 的全文索引篩出候選檔，再逐行比對 ── */
+const SEARCH_MAX = 200, SEARCH_NOTES_QUOTA = 30;
+const STAMP_RE = /^\[(\d{2}):(\d{2}):(\d{2})\] /;
+async function courseSearch(q, only) {
+  const terms = q.toLowerCase().split(/\s+/).filter(Boolean);
+  if (!terms.length) return { hits: [], total: 0 };
+  const { paths } = await search(q);
+  const cand = new Set(paths);
+  const ci = await courseIndex();
+  const has = (line) => { const x = (line || '').toLowerCase(); return terms.every((t) => x.includes(t)); };
+  const sum = [], tr = [], notes = [];
+  for (const c of only ? [only] : ci.list) {
+    for (const l of c.lessons) {
+      const p = l.transcript && vp(l.transcript.md);
+      if (!p || !cand.has(p)) continue;
+      const lines = LearnText.splitlines(await textOf(l.transcript.md) || '');
+      const inSum = (n) => l.summary && n >= l.summary.start_line && n <= l.summary.end_line;
+      let t = null;
+      for (let n = 1; n <= lines.length; n++) {
+        const line = lines[n - 1];
+        const m = STAMP_RE.exec(line);
+        if (m) t = (+m[1]) * 3600 + (+m[2]) * 60 + (+m[3]);
+        if (n < (l.transcript.body_start_line || 1) && !inSum(n)) continue;
+        if (!has(line)) continue;
+        if (inSum(n)) {
+          const mt = /\[(\d{2}):(\d{2}):(\d{2})\]/.exec(line);
+          sum.push({ kind: '摘要', c, l, t: mt ? (+mt[1]) * 3600 + (+mt[2]) * 60 + (+mt[3]) : null, text: line });
+        } else tr.push({ kind: '逐字稿', c, l, t, text: line.replace(STAMP_RE, '') });
+      }
+    }
+    for (const x of [...c.notes.map((y) => [y, '筆記']), ...c.handouts.map((y) => [y, '講義'])]) {
+      const p = vp(x[0].md);
+      if (!p || !cand.has(p)) continue;
+      const d = CAT.byPath.get(p);
+      for (const line of LearnText.splitlines(await textOf(x[0].md) || '')) if (has(line)) notes.push({ kind: x[1], c, d, text: line });
+    }
+  }
+  const total = sum.length + tr.length + notes.length;
+  const keepNotes = notes.slice(0, Math.min(SEARCH_NOTES_QUOTA, notes.length));
+  const hits = [...sum, ...tr].slice(0, SEARCH_MAX - keepNotes.length).concat(keepNotes);
+  return { hits, total, terms };
+}
+function markTerms(text, terms) {
+  const out = h('span', { class: 'snip' });
+  const low = text.toLowerCase();
+  let i = 0;
+  const cut = text.length > 140 ? Math.max(0, low.indexOf(terms[0]) - 40) : 0;
+  if (cut) { out.append('…'); i = cut; }
+  const end = Math.min(text.length, i + 160);
+  while (i < end) {
+    let best = -1, len = 0;
+    for (const t of terms) { const k = low.indexOf(t, i); if (k >= 0 && k < end && (best < 0 || k < best)) { best = k; len = t.length; } }
+    if (best < 0) { out.append(text.slice(i, end)); break; }
+    out.append(text.slice(i, best), h('mark', null, text.slice(best, best + len)));
+    i = best + len;
+  }
+  if (end < text.length) out.append('…');
+  return out;
+}
+function courseSearchBox(only) {
+  const input = h('input', { type: 'search', class: 'csearch', enterkeyhint: 'search', placeholder: only ? '搜尋這門課（逐字稿、摘要、講義、筆記）' : '搜尋全部課程', 'aria-label': '搜尋課程' });
+  const out = h('div', { class: 'csearch-out' });
+  const go = async () => {
+    const q = input.value.trim();
+    if (!q) { out.replaceChildren(); return; }
+    out.replaceChildren(h('p', { class: 'muted' }, '搜尋中…'));
+    const { hits, total, terms } = await courseSearch(q, only);
+    if (!total) { out.replaceChildren(h('p', { class: 'muted' }, `找不到「${q}」。`)); return; }
+    out.replaceChildren(h('p', { class: 'muted' }, total > hits.length ? `共 ${total} 處，列出前 ${hits.length} 處（摘要在前、筆記保留名額）。` : `共 ${total} 處。`),
+      listOf(hits.map((x) => {
+        const href = x.l ? `#/lesson/${x.l.id}?t=${x.t || 0}${x.kind === '摘要' ? '&tab=summary' : ''}` : pageHref(x.d.p);
+        const where = x.l ? `${x.l.order ? x.l.order + '　' : ''}${x.l.lesson_title || x.l.title}` : docTitle(x.d);
+        return h('li', null, h('a', { class: 'item', href }, h('span', { class: 't' }, where),
+          h('span', { class: 'm' }, [x.kind, x.t != null ? clock(x.t) : null, only ? null : x.c.title].filter(Boolean).join('・')), markTerms(x.text, terms)));
+      })));
+  };
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); input.blur(); go(); } });
+  input.addEventListener('search', go);
+  return h('div', { class: 'csearch-box' }, input, out);
+}
+
 // LearnText.renderMarkdown 回傳字串；renderTranscript 回傳 {html}
 function asHtml(x) { return typeof x === 'string' ? x : (x && x.html) || ''; }
 
@@ -517,16 +625,19 @@ async function openLessonMedia(l, meta, t, isAudio, note) {
     if (el) el.play().catch(() => {});
   } catch (e) { note.textContent = e.status === 401 ? 'Google 登入已過期，請重新登入。' : '找檔失敗：' + e.message; }
 }
-// 講義原檔：從雲端硬碟讀進來，開新視窗看（頁面內嵌只顯示第一頁；App 內顯示留給 P2b 的 pdf.js）
-async function openDrivePdf(name, row) {
-  const w = window.open('', '_blank');
+// 講義原檔：從雲端硬碟讀進來，用 pdf.js 直接顯示在講義裡（iPhone 頁面內嵌只顯示第一頁）；另給「開新視窗」
+async function openDrivePdf(name, row, box, btn) {
+  if (btn) btn.disabled = true;
+  box.replaceChildren(h('p', { class: 'muted' }, '從雲端硬碟讀取…'));
   try {
     const f = await driveFind(name);
-    if (!f) { if (w) w.close(); row.append(h('span', { class: 'muted' }, '雲端硬碟上找不到這份 PDF。')); return; }
-    const blob = await (await driveRead(f.id)).blob();
-    const url = URL.createObjectURL(new Blob([blob], { type: 'application/pdf' }));
-    if (w) w.location.href = url; else window.open(url, '_blank');
-  } catch (e) { if (w) w.close(); row.append(h('span', { class: 'muted' }, '讀取失敗：' + e.message)); }
+    if (!f) { box.replaceChildren(h('p', { class: 'muted' }, '雲端硬碟上找不到這份 PDF。')); return; }
+    const blob = new Blob([await (await driveRead(f.id)).blob()], { type: 'application/pdf' });
+    const url = URL.createObjectURL(blob);
+    blobUrls.push(url);
+    row.append(h('a', { class: 'btn quiet', href: url, target: '_blank', rel: 'noopener' }, '開新視窗'));
+    await pdfInto(box, blob);
+  } catch (e) { box.replaceChildren(h('p', { class: 'note' }, (e.status === 401 ? 'Google 登入已過期，請重新登入。' : '讀取失敗：' + e.message))); }
 }
 // 文章頁上的逐字稿：給一個「講次頁」按鈕（課程索引已載入時）
 function lessonLinkFor(p) {

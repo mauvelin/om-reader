@@ -224,6 +224,7 @@ function docMeta(d) {
   if (d.d && !docTitle(d).includes(String(d.d).slice(0, 10))) bits.push(String(d.d).slice(0, 10));
   if (d.a) bits.push(d.a);
   if (d.unrev) bits.push('未審');
+  if (d.on) bits.push(`出現在〈${d.on}〉${d.on_n > 1 ? `等 ${d.on_n} 篇` : ''}`);   // 附件：檔名不改，標出用在哪篇筆記
   return bits.join('　');
 }
 function docTitle(d) { return d.t || basename(d.p); }
@@ -494,6 +495,8 @@ async function viewPage(path) {
     .filter(Boolean).map((x) => h('span', { class: 'tag' }, x)), ns ? h('span', { class: 'tag ns' }, ns) : null,
     d.unrev ? h('span', { class: 'tag warn' }, '未審') : null,
     d.st === 'raw' ? h('span', { class: 'tag ns' }, '還沒折進 wiki') : null);
+  const onNote = d.onp && CAT.byPath.get(d.onp);
+  if (onNote) chips.append(h('a', { class: 'tag', href: pageHref(onNote.p) }, `出現在〈${d.on}〉${d.on_n > 1 ? `等 ${d.on_n} 篇` : ''}`));
   pushHistory(d.p).catch(() => {});
   const actions = h('div', { class: 'doc-actions' });
   if (d.nid) actions.append(...notionButtons(d.nid));
@@ -536,9 +539,17 @@ async function viewPage(path) {
         const closeFull = h('button', { type: 'button', class: 'btn full-close', hidden: true, onclick: () => { frame.classList.remove('full'); closeFull.hidden = true; } }, '關閉全螢幕');
         body.append(frame, closeFull, h('p', { class: 'muted' }, 'HTML 頁在隔離框架中執行，讀不到 App 的資料，也不會連到外部網站（地圖圖磚這類線上資源不顯示）。'));
       }
-      else body.append(h('div', { class: 'card file-card' }, h('div', { class: 'file-ext' }, ext.toUpperCase() || '檔案'),
-        h('div', { class: 'file-meta' }, h('div', { class: 't' }, basename(d.p)), h('div', { class: 'muted' }, fmtMB(b.size))),
-        h('a', { class: 'btn primary', href: url, target: '_blank', rel: 'noopener' }, ext === 'pdf' ? '打開 PDF' : '打開檔案')));
+      else {
+        const reader = h('div', { class: 'pdf-view' });
+        const inApp = ext === 'pdf' && typeof pdfInto === 'function'
+          ? h('button', { type: 'button', class: 'btn primary', onclick: async (e) => {
+            e.currentTarget.disabled = true; reader.replaceChildren(h('p', { class: 'muted' }, '載入中…'));
+            try { await pdfInto(reader, typed); } catch (err) { reader.replaceChildren(h('p', { class: 'note' }, 'App 內顯示失敗：' + err.message + '。可改用「開新視窗」。')); }
+          } }, '在 App 內閱讀') : null;
+        body.append(h('div', { class: 'card file-card' }, h('div', { class: 'file-ext' }, ext.toUpperCase() || '檔案'),
+          h('div', { class: 'file-meta' }, h('div', { class: 't' }, basename(d.p)), h('div', { class: 'muted' }, fmtMB(b.size))),
+          h('div', { class: 'row' }, inApp, h('a', { class: inApp ? 'btn' : 'btn primary', href: url, target: '_blank', rel: 'noopener' }, ext === 'pdf' ? (inApp ? '開新視窗' : '打開 PDF') : '打開檔案'))), reader);
+      }
     }
   }
   const kids = [head, chips];
