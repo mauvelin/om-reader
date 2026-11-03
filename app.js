@@ -391,7 +391,8 @@ function splitFrontmatter(text) {
   return m ? { fm: m[1], body: text.slice(m[0].length) } : { fm: '', body: text };
 }
 // 把 [[...]] 與 ![[...]] 換成一般 markdown（程式碼區塊內不動）
-function convertWikilinks(body, srcPath) {
+function convertWikilinks(body, srcPath, fn) {
+  if (fn) body = body.replace(/[ \t]+[—–][ \t]+(?=\[\[raw\/)/g, ' ');
   const parts = body.split(/(^[ \t]*(?:```|~~~)[\s\S]*?^[ \t]*(?:```|~~~)[^\n]*$|`[^`\n]*`)/m);
   return parts.map((seg, i) => {
     if (i % 2 === 1) return seg;
@@ -402,6 +403,10 @@ function convertWikilinks(body, srcPath) {
       const ext = extOf(d.p);
       if (bang && IMG_EXT.has(ext)) return `![${label.replace(/[[\]]/g, '')}](om:${encodeURIComponent(d.p)})`;
       if (bang && (ext === 'mp4' || ext === 'mov')) return `<video data-om="${md.utils.escapeHtml(d.p)}" controls playsinline preload="metadata"></video>`;
+      if (fn && d.l === 'raw' && !bang) {   // 概念頁、人物頁：引用 raw 的地方改成上標編號註腳
+        if (!fn.map.has(d.p)) fn.map.set(d.p, fn.map.size + 1);
+        return `<sup class="fn"><a href="${pageHref(d.p)}">${fn.map.get(d.p)}</a></sup>`;
+      }
       const title = d.t || basename(d.p).replace(/\.md$/, '');
       return `[${(alias || title).replace(/[[\]]/g, '')}](${pageHref(d.p)})`;
     });
@@ -413,15 +418,45 @@ DOMPurify.addHook('afterSanitizeAttributes', (node) => {
     if (/^https?:/i.test(href)) { node.setAttribute('target', '_blank'); node.setAttribute('rel', 'noopener noreferrer'); }
   }
 });
-function renderMarkdown(body, srcPath) {
-  const html = md.render(convertWikilinks(body, srcPath));
+// 逐字稿：每行開頭的 [hh:mm:ss] 獨立成段、時間戳另起一行；摘要裡的時間點可以點，跳到逐字稿那一段
+const TS_LINE = /^\[(\d{2}):(\d{2}):(\d{2})\]\s*/gm;
+function tsSec(a, b, c) { return (+a) * 3600 + (+b) * 60 + (+c); }
+function formatTranscript(body) {
+  if ((body.match(TS_LINE) || []).length < 5) return body;
+  return body.replace(TS_LINE, (m, a, b, c) => `\n\n<span class="ts" data-ts="${tsSec(a, b, c)}">${a}:${b}:${c}</span>\n`);
+}
+function renderMarkdown(body, srcPath, fn) {
+  const html = md.render(convertWikilinks(formatTranscript(body), srcPath, fn));
   const frag = DOMPurify.sanitize(html, {
     RETURN_DOM_FRAGMENT: true,
     FORBID_TAGS: ['style', 'form', 'input', 'button', 'textarea', 'select', 'iframe', 'object', 'embed', 'link', 'meta', 'base'],
-    ADD_TAGS: ['video'], ADD_ATTR: ['controls', 'playsinline', 'preload', 'target'],
+    ADD_TAGS: ['video'], ADD_ATTR: ['controls', 'playsinline', 'preload', 'target', 'data-ts'],
   });
   const wrap = h('div', { class: 'md' });
   wrap.append(frag);
+  // 摘要裡的「[00:03:18]」：有逐字稿段落時變成可點的跳轉
+  const stamps = [...wrap.querySelectorAll('.ts[data-ts]')];
+  if (stamps.length) {
+    const walker = document.createTreeWalker(wrap, NodeFilter.SHOW_TEXT);
+    const hits = [];
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) if (/\[\d{2}:\d{2}:\d{2}\]/.test(n.nodeValue)) hits.push(n);
+    for (const n of hits) {
+      const frag2 = document.createDocumentFragment();
+      n.nodeValue.split(/(\[\d{2}:\d{2}:\d{2}\])/).forEach((part, k) => {
+        if (!(k % 2)) { if (part) frag2.append(part); return; }
+        const [a, b, c] = part.slice(1, -1).split(':');
+        const sec = tsSec(a, b, c);
+        frag2.append(h('button', { type: 'button', class: 'ts-jump', onclick: () => {
+          const target = stamps.find((x) => +x.dataset.ts >= sec) || stamps[stamps.length - 1];
+          target.scrollIntoView({ block: 'center' });
+          target.classList.add('flash'); setTimeout(() => target.classList.remove('flash'), 1600);
+        } }, part.slice(1, -1)));
+      });
+      n.replaceWith(frag2);
+    }
+  }
+  // 圖片點了全螢幕
+  wrap.querySelectorAll('img').forEach((im) => im.addEventListener('click', () => zoomImage(im)));
   wrap.querySelectorAll('table').forEach((t) => { const w = h('div', { class: 'table-wrap' }); t.replaceWith(w); w.append(t); });
   return wrap;
 }
@@ -443,6 +478,13 @@ function hydrateMedia(root) {
     for (const en of entries) if (en.isIntersecting) { io.unobserve(en.target); hydrateOne(en.target, bucket); }
   }, { rootMargin: '1200px 0px' });
   els.forEach((el) => io.observe(el));
+}
+function zoomImage(im) {
+  if (!im.src) return;
+  const big = h('img', { src: im.src, alt: im.alt || '' });
+  const box = h('div', { class: 'zoom', role: 'dialog', 'aria-label': '圖片' },
+    h('button', { type: 'button', class: 'btn zoom-close', onclick: () => box.remove() }, '關閉'), h('div', { class: 'zoom-scroll' }, big));
+  document.body.append(box);
 }
 // 頁內大綱：三個以上 ## / ### 才出現；點了捲到該處（hash 給路由用，不用 #id 錨點）
 function outline(mdRoot) {
@@ -544,7 +586,8 @@ const laneName = (l) => (CAT && CAT.ui && CAT.ui.lanes && CAT.ui.lanes[l]) || l;
 const laneOrder = () => (CAT && CAT.ui && CAT.ui.lane_order) || [];
 function docMeta(d) {
   const bits = [laneName(d.l)];
-  if (d.d) bits.push(String(d.d).slice(0, 10));
+  if (d.ar) bits.push(d.ar);
+  if (d.d && !docTitle(d).includes(String(d.d).slice(0, 10))) bits.push(String(d.d).slice(0, 10));
   if (d.a) bits.push(d.a);
   if (d.unrev) bits.push('未審');
   return bits.join('　');
@@ -552,15 +595,25 @@ function docMeta(d) {
 function docTitle(d) { return d.t || basename(d.p); }
 // 只有領域地圖上色：顏色＝本人在 Notion Category 選單上設的顏色（catalog.ui.area_dyes，依領域頁路徑）。
 // 其他地方一律中性色，重點色用紫（本人 2026-11-02）。
-function areaColor(el, path) {
-  const dye = CAT && CAT.ui && CAT.ui.area_dyes && CAT.ui.area_dyes[path];
+function dyeOf(area) { return area && CAT && CAT.ui && CAT.ui.area_dyes ? CAT.ui.area_dyes[area] : null; }
+function areaColor(el, d, area) {
+  const dye = dyeOf(area || (d && d.ar));
   if (dye) { el.style.setProperty('--fam', `var(--dye-${dye})`); el.classList.add('has-area'); }
   return el;
 }
-function itemLink(d, extra) {
+// 領域 chip：方點＋名稱，有 MOC 頁就可點（顏色一定和名稱一起出現，不單靠顏色）
+function areaChip(area) {
+  const page = CAT && CAT.ui && CAT.ui.area_pages && CAT.ui.area_pages[area];
+  const el = page ? h('a', { class: 'tag area-tag', href: pageHref(page) }, h('span', { class: 'dot' }), area)
+    : h('span', { class: 'tag area-tag' }, h('span', { class: 'dot' }), area);
+  return areaColor(el, null, area);
+}
+let restoreOnOpen = null;   // 從「繼續看／看過」點進去時，回到上次讀到的位置
+function itemLink(d, extra, opts) {
   const a = h('a', { class: 'item', href: pageHref(d.p) },
     h('span', { class: 't' }, docTitle(d)), h('span', { class: 'm' }, docMeta(d)), extra || null);
-  return h('li', null, areaColor(a, d.p));
+  if (opts && opts.resume) a.addEventListener('click', () => { restoreOnOpen = d.p; });
+  return h('li', null, areaColor(a, d));
 }
 function listOf(items, emptyText) {
   const ul = h('ul', { class: 'list' }, items);
@@ -583,9 +636,18 @@ async function getHistory() {
   try { return JSON.parse(td.decode(await open_(rec))); } catch (e) { return []; }
 }
 async function pushHistory(p) {
-  const list = (await getHistory()).filter((x) => x.p !== p);
-  list.unshift({ p, at: Date.now() });
+  const old = await getHistory();
+  const prevEntry = old.find((x) => x.p === p);
+  const list = old.filter((x) => x.p !== p);
+  list.unshift({ p, at: Date.now(), y: prevEntry ? prevEntry.y : 0 });
   await kvSet('history', await seal(te.encode(JSON.stringify(list.slice(0, 100)))));
+}
+async function savePos(p, y) {
+  const list = await getHistory();
+  const e = list.find((x) => x.p === p);
+  if (!e || Math.abs((e.y || 0) - y) < 200) return;
+  e.y = Math.round(y);
+  await kvSet('history', await seal(te.encode(JSON.stringify(list))));
 }
 
 /* ════════ 畫面 ════════ */
@@ -596,8 +658,9 @@ function setView(...kids) {
 // 返回快取：文章、清單、搜尋、分類離開時把整個畫面（含展開筆數、篩選、捲動位置）留著，回來直接還原
 const viewCache = new Map();
 let curHash = null;
-const CACHEABLE = /^#\/(p|l|s)\/|^#\/browse/;
+const CACHEABLE = /^#\/(p|l|s|c)\/|^#\/browse/;
 function stashView() {
+  if (curHash && curHash.startsWith('#/p/') && KEY) savePos(dec(curHash.slice(4)), window.scrollY).catch(() => {});
   if (curHash && CACHEABLE.test(curHash) && view.childNodes.length) {
     viewCache.delete(curHash);
     viewCache.set(curHash, { nodes: [...view.childNodes], scroll: window.scrollY, urls: blobUrls });
@@ -641,7 +704,7 @@ async function viewHome() {
   }
   // 繼續看
   const hist = (await getHistory()).map((x) => cat.byPath.get(x.p)).filter(Boolean).slice(0, 3);
-  if (hist.length) kids.push(secTitle('繼續看', '#/history', '全部'), listOf(hist.map((d) => itemLink(d))));
+  if (hist.length) kids.push(secTitle('繼續看', '#/history', '全部'), listOf(hist.map((d) => itemLink(d, null, { resume: true }))));
   // 領域地圖：讀 catalog.ui.home_map 指定的頁面裡「### 名稱 → [[頁面]] 說明」的行
   const idx = ui.home_map ? cat.byPath.get(ui.home_map) : null;
   if (idx) {
@@ -653,7 +716,7 @@ async function viewHome() {
       const d = resolveLink(m[2], idx.p);
       if (!d) continue;
       tiles.push(areaColor(h('a', { class: 'tile area', href: pageHref(d.p) }, h('span', { class: 't' }, m[1].trim()),
-        h('span', { class: 'm' }, m[3].replace(/^[●○⊡]\s*/, ''))), d.p));
+        h('span', { class: 'm' }, m[3].replace(/^[●○⊡]\s*/, ''))), d));
     }
     if (tiles.length) kids.push(secTitle('領域地圖'), h('div', { class: 'grid' }, tiles));
   }
@@ -661,6 +724,8 @@ async function viewHome() {
   const skip = new Set(ui.recent_exclude || []);
   const recent = cat.docs.filter((d) => d.d && d.p.endsWith('.md') && !skip.has(d.l))
     .sort((a, b) => String(b.d).localeCompare(String(a.d))).slice(0, 12);
+  const changed = cat.docs.filter((d) => d.m && d.s != null && !skip.has(d.l)).sort((a, b) => String(b.m).localeCompare(String(a.m)));
+  if (changed.length) kids.push(secTitle(`最近更新（${changed[0].m}）`), listOf(changed.slice(0, 12).map((d) => itemLink(d))));
   kids.push(secTitle('最近新增'), listOf(recent.map((d) => itemLink(d))));
   if (st.syncedAt) kids.push(h('p', { class: 'muted more' }, `資料版本 ${String(cat.source_commit || '').slice(0, 7)}・同步於 ${new Date(st.syncedAt).toLocaleString('zh-TW', { dateStyle: 'medium', timeStyle: 'short' })}`));
   setView(...kids);
@@ -683,9 +748,29 @@ async function viewBrowse() {
   for (const g of groupList) {
     const lanes = g.lanes.filter((l) => counts.has(l)).sort(byOrder);
     if (!lanes.length) continue;
-    kids.push(secTitle(g.name), h('div', { class: 'grid' }, lanes.map((l) => h('a', { class: 'tile', href: '#/l/' + enc(l) },
+    const rows = listOf(lanes.map((l) => h('li', null, h('a', { class: 'item', href: '#/l/' + enc(l) },
       h('span', { class: 't' }, laneName(l)), h('span', { class: 'm' }, `${counts.get(l).toLocaleString()} 則`)))));
+    if (g.name === '/') kids.push(h('details', { class: 'aux' }, h('summary', null, `/（repo 根目錄下的資料夾，${lanes.length} 個）`), rows));
+    else kids.push(secTitle(g.name), rows);
   }
+  setView(...kids);
+}
+
+async function viewCourse(ci) {
+  const cat = await catalog();
+  if (!cat) return emptyState();
+  const c = ((cat.ui && cat.ui.courses) || [])[ci];
+  if (!c) return setView(h('h1', null, '找不到這門課'));
+  const head = areaColor(h('div', { class: 'doc-head' }, h('nav', { class: 'crumb' }, h('a', { href: '#/l/' + enc('self/resources') }, 'self/resources')), h('h1', null, c.t)), null, c.cat);
+  const kids = [head, h('div', { class: 'chips' }, c.cat ? areaChip(c.cat) : null, h('span', { class: 'tag' }, `${c.lessons.length} 講`))];
+  if (c.digests.length) kids.push(secTitle('課程摘錄'), listOf(c.digests.map((p) => cat.byPath.get(p)).filter(Boolean).map((x) => itemLink(x))));
+  if (c.notes.length) kids.push(secTitle('我的筆記'), listOf(c.notes.map((p) => cat.byPath.get(p)).filter(Boolean).map((x) => itemLink(x))));
+  kids.push(secTitle('逐字稿'), h('ol', { class: 'list lessons' }, c.lessons.map((l) => {
+    const d = cat.byPath.get(l.p);
+    return h('li', null, h('a', { class: 'item', href: pageHref(l.p) }, h('span', { class: 't' }, `${l.o ? l.o + '　' : ''}${l.t}`),
+      h('span', { class: 'm' }, l.ho.length ? `有講義・${d && d.n ? Math.round(d.n / 1000) + 'k 字' : ''}` : (d && d.n ? Math.round(d.n / 1000) + 'k 字' : ''))));
+  })));
+  if (c.handouts.length) kids.push(h('details', { class: 'aux' }, h('summary', null, `講義（${c.handouts.length}）`), listOf(c.handouts.map((p) => cat.byPath.get(p)).filter(Boolean).map((x) => itemLink(x)))));
   setView(...kids);
 }
 
@@ -697,33 +782,81 @@ async function viewHistory() {
   const clear = h('button', { type: 'button', class: 'btn quiet' }, '清除紀錄');
   clear.addEventListener('click', async () => { await kvSet('history', await seal(te.encode('[]'))); viewHistory(); });
   setView(h('h1', null, '看過'), h('p', { class: 'page-sub' }, '最近打開過的 100 頁，只存在這支手機（加密）。'),
-    listOf(hist.map(([d, at]) => itemLink(d, h('span', { class: 'm' }, `看過 ${fmt(at)}`))), '還沒有看過任何一頁。'),
+    listOf(hist.map(([d, at]) => itemLink(d, h('span', { class: 'm' }, `看過 ${fmt(at)}`), { resume: true })), '還沒有看過任何一頁。'),
     hist.length ? h('div', { class: 'row' }, clear) : null);
 }
 
 const isAux = (d) => /^_/.test(basename(d.p)) || basename(d.p) === 'index.md' || /\.(json|jsonl)$/.test(d.p);
-async function viewLane(lane) {
+async function viewLane(arg) {
+  const [lane, qs] = arg.split('?');
+  const params = new URLSearchParams(qs || '');
   const cat = await catalog();
   if (!cat) return emptyState();
+  const ui = cat.ui || {};
+  if (lane === 'self/resources' && (ui.courses || []).length && !params.has('all')) return viewCourses(cat, lane);
   const all = cat.docs.filter((d) => d.l === lane && (d.s != null || /\.(pdf|html?|mp4)$/i.test(d.p)));
-  const docs = all.filter((d) => !isAux(d));
+  let docs = all.filter((d) => !isAux(d));
   const aux = all.filter(isAux);
+  const pinned = (ui.pinned || []).map((p) => cat.byPath.get(p)).filter((d) => d && d.l === lane);
   const dated = docs.filter((d) => d.d).length >= docs.length * 0.6;
   if (dated) docs.sort((a, b) => String(b.d || '').localeCompare(String(a.d || '')) || a.p.localeCompare(b.p));
   else docs.sort((a, b) => docTitle(a).localeCompare(docTitle(b), 'zh-Hant'));
+  docs = pinned.concat(docs.filter((d) => !pinned.includes(d)));
+  const head = h('div', { class: 'doc-head' }, h('h1', null, laneName(lane)));
+  const sub = h('p', { class: 'page-sub' });
   const list = h('ul', { class: 'list' });
-  let shown = 0;
   const more = h('button', { class: 'btn more', type: 'button' }, '再多 100 則');
+  const filters = h('div', { class: 'filter-row' });
+  const state = { year: params.get('y'), written: lane === ui.journal_lane, area: null };
+  let pool = docs, shown = 0;
+  const apply = () => {
+    pool = docs.filter((d) => (!state.year || String(d.d || '').startsWith(state.year))
+      && (!state.written || lane !== ui.journal_lane || d.w) && (!state.area || (d.areas || [d.ar]).includes(state.area)));
+    list.replaceChildren(); shown = 0; add();
+    sub.textContent = `${pool.length.toLocaleString()} 則・${dated ? '新到舊' : '依名稱'}`;
+  };
   const add = () => {
-    for (const d of docs.slice(shown, shown + 100)) list.append(itemLink(d));
-    shown = Math.min(docs.length, shown + 100);
-    more.hidden = shown >= docs.length;
+    for (const d of pool.slice(shown, shown + 100)) list.append(itemLink(d));
+    shown = Math.min(pool.length, shown + 100);
+    more.hidden = shown >= pool.length;
+    if (!pool.length) list.append(h('li', { class: 'empty' }, '沒有符合的項目'));
   };
   more.addEventListener('click', add);
-  add();
-  const head = h('div', { class: 'doc-head' }, h('h1', null, laneName(lane)));
+  const chip = (label, on, fnc) => h('button', { type: 'button', class: 'filter', 'aria-pressed': String(!!on), onclick: (e) => { fnc(); filters.querySelectorAll('button').forEach((b) => { if (b.dataset.g === e.currentTarget.dataset.g) b.setAttribute('aria-pressed', 'false'); }); e.currentTarget.setAttribute('aria-pressed', 'true'); apply(); } }, label);
+  if (lane === ui.journal_lane) {   // 日記：只看有手寫內容的日子、跳年份
+    const w = h('button', { type: 'button', class: 'filter', 'aria-pressed': 'true', onclick: (e) => { state.written = !state.written; e.currentTarget.setAttribute('aria-pressed', String(state.written)); apply(); } }, '只看有手寫內容');
+    const years = [...new Set(docs.map((d) => String(d.d || '').slice(0, 4)).filter(Boolean))].sort().reverse();
+    const yc = [chip('全部年份', !state.year, () => { state.year = null; }), ...years.map((y) => chip(y, state.year === y, () => { state.year = y; }))];
+    yc.forEach((b) => { b.dataset.g = 'y'; });
+    filters.append(w, ...yc);
+  } else if (docs.some((d) => d.areas && d.areas.length)) {   // 論點卡：依 16 領域（卡片自己的 areas）
+    const counts = new Map();
+    docs.forEach((d) => (d.areas || []).forEach((a) => counts.set(a, (counts.get(a) || 0) + 1)));
+    const ac = [chip(`全部 ${docs.length}`, true, () => { state.area = null; }),
+      ...[...counts].sort((a, b) => b[1] - a[1]).map(([a, n]) => areaColor(chip(`${a} ${n}`, false, () => { state.area = a; }), null, a))];
+    ac.forEach((b) => { b.dataset.g = 'a'; if (b.classList.contains('has-area')) b.prepend(h('span', { class: 'dot' })); });
+    filters.append(...ac);
+  }
   const auxBox = aux.length ? h('details', { class: 'aux' }, h('summary', null, `總覽與附檔（${aux.length}）`), listOf(aux.map((d) => itemLink(d)))) : null;
-  setView(head, h('p', { class: 'page-sub' }, `${docs.length.toLocaleString()} 則・${dated ? '新到舊' : '依名稱'}`), list, more, auxBox);
+  setView(head, filters.childElementCount ? filters : null, sub, list, more, auxBox);
+  apply();
+}
+// 學習筆記：照既有的課程索引（_courses.json）分課程，課程內照講次
+function viewCourses(cat, lane) {
+  const cs = cat.ui.courses;
+  const byCat = new Map();
+  cs.forEach((c, i) => { const k = c.cat || '其他'; if (!byCat.has(k)) byCat.set(k, []); byCat.get(k).push([c, i]); });
+  const inCourse = new Set(cs.flatMap((c) => [...c.lessons.map((l) => l.p), ...c.handouts, ...c.notes]));
+  const loose = cat.docs.filter((d) => d.l === lane && d.s != null && !inCourse.has(d.p) && !isAux(d));
+  const kids = [h('div', { class: 'doc-head' }, h('h1', null, laneName(lane))), h('p', { class: 'page-sub' }, `${cs.length} 門課・${cs.reduce((n, c) => n + c.lessons.length, 0)} 講・依課程`)];
+  for (const [k, list] of [...byCat].sort((a, b) => b[1].length - a[1].length)) {
+    kids.push(h('div', { class: 'sec-title' }, h('span', null, areaColor(h('span', { class: 'sec-dot' }), null, k), k)),
+      listOf(list.map(([c, i]) => h('li', null, areaColor(h('a', { class: 'item', href: '#/c/' + i }, h('span', { class: 't' }, c.t),
+        h('span', { class: 'm' }, `${c.lessons.length} 講${c.handouts.length ? `・講義 ${c.handouts.length}` : ''}${c.notes.length ? `・我的筆記 ${c.notes.length}` : ''}`)), null, c.cat)))));
+  }
+  if (loose.length) kids.push(h('details', { class: 'aux' }, h('summary', null, `不屬於任何課程（${loose.length}）`), listOf(loose.map((d) => itemLink(d)))));
+  kids.push(h('p', { class: 'muted more' }, h('a', { href: '#/l/' + enc(lane) + '?all=1' }, '改看全部檔案清單')));
+  setView(...kids);
 }
 
 // iPhone 實測：www.notion.so 的連結會直接叫起 Notion App（2026-11-02）
@@ -739,9 +872,12 @@ async function viewPage(path) {
   if (!d) return setView(h('h1', null, '找不到這一頁'), h('p', { class: 'muted' }, path));
   const crumb = h('nav', { class: 'crumb', 'aria-label': '所在位置' }, h('a', { href: '#/l/' + enc(d.l) }, laneName(d.l)));
   const title = h('h1', { class: docTitle(d).length > 28 ? 'long' : null }, docTitle(d));
-  const head = areaColor(h('div', { class: 'doc-head' }, crumb, title), d.p);
-  const chips = h('div', { class: 'chips' }, [d.d && String(d.d).slice(0, 10), d.a, d.src]
-    .filter(Boolean).map((x) => h('span', { class: 'tag' }, x)), d.unrev ? h('span', { class: 'tag warn' }, '未審') : null);
+  const head = areaColor(h('div', { class: 'doc-head' }, crumb, title), d);
+  const areas = d.areas && d.areas.length ? d.areas : (d.ar && !/^vault\/wiki\/MOC\//.test(d.p) ? [d.ar] : []);
+  const ns = d.ns && cat.ui && cat.ui.nonself ? cat.ui.nonself[d.ns] : null;
+  const chips = h('div', { class: 'chips' }, areas.map(areaChip), [d.d && String(d.d).slice(0, 10), d.a, d.src, d.l === 'self/cards' && d.prov && `來源：${d.prov}`]
+    .filter(Boolean).map((x) => h('span', { class: 'tag' }, x)), ns ? h('span', { class: 'tag ns' }, ns) : null,
+    d.unrev ? h('span', { class: 'tag warn' }, '未審') : null);
   pushHistory(d.p).catch(() => {});
   const actions = h('div', { class: 'doc-actions' });
   if (d.nid) actions.append(...notionButtons(d.nid));
@@ -752,7 +888,11 @@ async function viewPage(path) {
     const text = await docText(d);
     if (text == null) body.append(h('p', { class: 'note' }, '這一頁的內容還沒同步。'));
     else if (ext === 'md') {
-      const mdRoot = renderMarkdown(splitFrontmatter(text).body, d.p);
+      const fn = /^wiki\/(concepts|people)$/.test(d.l) ? { map: new Map() } : null;
+      const mdRoot = renderMarkdown(splitFrontmatter(text).body, d.p, fn);
+      d._fn = fn;
+      labelSections(mdRoot, d);
+      foldRoutingRules(mdRoot, d);
       const toc = outline(mdRoot);
       if (toc) body.append(toc);
       body.append(mdRoot);
@@ -771,24 +911,107 @@ async function viewPage(path) {
       else if (ext === 'html' || ext === 'htm') {
         const online = cat.ui && cat.ui.html_online && cat.ui.html_online[d.p];
         if (online) actions.append(h('a', { class: 'btn', href: online, target: '_blank', rel: 'noopener noreferrer' }, svgIcon('external'), '開線上版'));
-        body.append(await htmlFrame(b), h('p', { class: 'muted' }, 'HTML 頁在隔離框架中執行，讀不到 App 的資料，也不會連到外部網站（地圖圖磚這類線上資源不顯示）。'));
+        const frame = await htmlFrame(b);
+        const ttl = ((await b.text()).match(/<title[^>]*>([^<]{1,120})<\/title>/i) || [])[1];
+        if (ttl) title.textContent = ttl.trim();
+        actions.append(h('button', { type: 'button', class: 'btn', onclick: () => { frame.classList.add('full'); closeFull.hidden = false; } }, '全螢幕'));
+        const closeFull = h('button', { type: 'button', class: 'btn full-close', hidden: true, onclick: () => { frame.classList.remove('full'); closeFull.hidden = true; } }, '關閉全螢幕');
+        body.append(frame, closeFull, h('p', { class: 'muted' }, 'HTML 頁在隔離框架中執行，讀不到 App 的資料，也不會連到外部網站（地圖圖磚這類線上資源不顯示）。'));
       }
       else body.append(h('a', { class: 'btn primary', href: url, target: '_blank', rel: 'noopener' }, ext === 'pdf' ? '打開 PDF' : '打開檔案'), h('p', { class: 'muted' }, fmtMB(b.size)));
     }
   }
   const kids = [head, chips];
   if (actions.childElementCount) kids.push(actions);
+  const nav = docNav(d);
+  if (nav) kids.push(nav);
   kids.push(body);
+  if (nav) kids.push(docNav(d));
   // 來源（論點卡的 sources、概念頁引用的 raw）與反向連結
   const L = await links();
-  const outs = (L.out.get(d.p) || []).map((p) => cat.byPath.get(p)).filter((x) => x && x.nid && x.p !== d.p);
-  if (outs.length && !d.nid) {
-    kids.push(secTitle(`引用的來源（${outs.length}）`), listOf(outs.slice(0, 60).map((x) => itemLink(x))));
+  if (d._fn && d._fn.map.size) {   // 註腳：照正文出現順序編號
+    const ordered = [...d._fn.map.entries()].sort((a, b) => a[1] - b[1]).map(([p, n]) => [cat.byPath.get(p), n]).filter((x) => x[0]);
+    kids.push(secTitle(`來源（${ordered.length}）`), h('ol', { class: 'list fn-list' }, ordered.map(([x, n]) => itemLink(x, null).firstChild ? h('li', { value: n }, itemLink(x).firstChild) : null)));
+  } else {
+    const outs = (L.out.get(d.p) || []).map((p) => cat.byPath.get(p)).filter((x) => x && x.nid && x.p !== d.p);
+    if (outs.length && !d.nid) kids.push(secTitle(`引用的來源（${outs.length}）`), listOf(outs.slice(0, 60).map((x) => itemLink(x))));
   }
+  const mocArea = (d.p.match(/^vault\/wiki\/MOC\/(.+)\.md$/) || [])[1];
+  if (mocArea) kids.push(...areaExtras(cat, mocArea));
   const backs = (L.back.get(d.p) || []).map((p) => cat.byPath.get(p)).filter(Boolean);
   if (backs.length) kids.push(secTitle(`被引用（${backs.length}）`), listOf(backs.slice(0, 200).map((x) => itemLink(x))));
   setView(...kids);
   hydrateMedia(view);
+  if (restoreOnOpen === d.p) {
+    restoreOnOpen = null;
+    const e = (await getHistory()).find((x) => x.p === d.p);
+    if (e && e.y) requestAnimationFrame(() => window.scrollTo(0, e.y));
+  }
+}
+// 非本人陳述的段落標示（SCHEMA 既有定義，字樣在資料包 catalog.ui.section_labels）
+function labelSections(root, d) {
+  const map = CAT.ui && CAT.ui.section_labels && CAT.ui.section_labels[d.l];
+  if (!map) return;
+  root.querySelectorAll('h2').forEach((x) => { const lab = map[x.textContent.trim()]; if (lab) x.append(' ', h('span', { class: 'tag ns' }, lab)); });
+}
+// MOC 底部給 /compile 看的「分類總則」預設摺疊（它是路由規則，不是閱讀內容）
+function foldRoutingRules(root, d) {
+  if (!/^vault\/wiki\/MOC\//.test(d.p)) return;
+  root.querySelectorAll('blockquote').forEach((bq) => {
+    if (!/^\s*分類總則/.test(bq.textContent)) return;
+    const det = h('details', { class: 'aux' }, h('summary', null, '分類總則（給 /compile 的路由規則）'));
+    bq.replaceWith(det); det.append(bq);
+  });
+}
+// 領域頁底部：本領域的其他內容（照 d.ar：論點卡 areas、課程 Category…），MOC 本體不動
+function areaExtras(cat, area) {
+  const groups = new Map();
+  for (const x of cat.docs) {
+    if (x.ar !== area || /^wiki\//.test(x.l) || x.s == null) continue;
+    if (!groups.has(x.l)) groups.set(x.l, []);
+    groups.get(x.l).push(x);
+  }
+  if (!groups.size) return [];
+  const out = [secTitle('本領域的其他內容')];
+  for (const [l, xs] of [...groups].sort((a, b) => b[1].length - a[1].length)) {
+    xs.sort((a, b) => String(b.d || '').localeCompare(String(a.d || '')));
+    out.push(h('details', { class: 'aux' }, h('summary', null, `${laneName(l)}（${xs.length}）`), listOf(xs.slice(0, 200).map((x) => itemLink(x)))));
+  }
+  return out;
+}
+// 文章頁導覽：課程（上一講／下一講／講義／課程頁）、日記（前一天／後一天）
+function courseOf(p) {
+  const cs = (CAT.ui && CAT.ui.courses) || [];
+  for (let ci = 0; ci < cs.length; ci++) {
+    const li = cs[ci].lessons.findIndex((l) => l.p === p);
+    if (li >= 0) return { ci, li, c: cs[ci], kind: 'lesson' };
+    if (cs[ci].handouts.includes(p) || cs[ci].notes.includes(p)) return { ci, li: -1, c: cs[ci], kind: 'other' };
+  }
+  return null;
+}
+function docNav(d) {
+  const cs = courseOf(d.p);
+  if (cs) {
+    const row = h('div', { class: 'doc-nav' });
+    const prev = cs.kind === 'lesson' ? cs.c.lessons[cs.li - 1] : null;
+    const next = cs.kind === 'lesson' ? cs.c.lessons[cs.li + 1] : null;
+    row.append(prev ? h('a', { class: 'btn', href: pageHref(prev.p), 'aria-label': `上一講 ${prev.o || ''}` }, svgIcon('back'), prev.o || '上一講') : h('span'),
+      h('a', { class: 'btn quiet', href: '#/c/' + cs.ci }, '課程目錄'),
+      next ? h('a', { class: 'btn', href: pageHref(next.p), 'aria-label': `下一講 ${next.o || ''}` }, next.o || '下一講', svgIcon('chev')) : h('span'));
+    const lesson = cs.kind === 'lesson' ? cs.c.lessons[cs.li] : null;
+    if (lesson && lesson.ho.length) row.append(...lesson.ho.map((p, i) => h('a', { class: 'btn quiet', href: pageHref(p) }, lesson.ho.length > 1 ? `講義 ${i + 1}` : '講義')));
+    return row;
+  }
+  if (CAT.ui && d.l === CAT.ui.journal_lane) {
+    const days = CAT.docs.filter((x) => x.l === d.l && x.d).sort((a, b) => String(a.d).localeCompare(String(b.d)));
+    const i = days.findIndex((x) => x.p === d.p);
+    const prev = days[i - 1], next = days[i + 1];
+    return h('div', { class: 'doc-nav' },
+      prev ? h('a', { class: 'btn', href: pageHref(prev.p) }, svgIcon('back'), String(prev.d).slice(5, 10)) : h('span'),
+      h('a', { class: 'btn quiet', href: '#/l/' + enc(d.l) + '?y=' + String(d.d).slice(0, 4) }, `${String(d.d).slice(0, 4)} 年`),
+      next ? h('a', { class: 'btn', href: pageHref(next.p) }, String(next.d).slice(5, 10), svgIcon('chev')) : h('span'));
+  }
+  return null;
 }
 function mimeOf(p) {
   return ({ webp: 'image/webp', jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif', svg: 'image/svg+xml',
@@ -1020,6 +1243,7 @@ async function route() {
     else if (hash.startsWith('#/history')) await viewHistory();
     else if (hash.startsWith('#/p/')) await viewPage(dec(hash.slice(4)));
     else if (hash.startsWith('#/l/')) await viewLane(dec(hash.slice(4)));
+    else if (hash.startsWith('#/c/')) await viewCourse(+hash.slice(4));
     else if (hash.startsWith('#/s/')) await viewSearch(decodeURIComponent(hash.slice(4)));
     else if (hash.startsWith('#/settings')) await viewSettings();
     else await viewHome();
@@ -1037,10 +1261,10 @@ $('#qform').addEventListener('submit', (e) => {
 let navDepth = 0;
 window.addEventListener('hashchange', () => { navDepth++; route(); });
 function updateChrome(hash, locked) {
-  const deep = /^#\/(p|l|s)\//.test(hash);
+  const deep = /^#\/(p|l|s|c)\//.test(hash);
   $('#back').hidden = locked || !deep || navDepth === 0;
   $('#brand').hidden = !$('#back').hidden;
-  const tab = hash.startsWith('#/browse') || hash.startsWith('#/l/') ? 'browse'
+  const tab = hash.startsWith('#/browse') || hash.startsWith('#/l/') || hash.startsWith('#/c/') ? 'browse'
     : hash.startsWith('#/history') ? 'history'
       : hash.startsWith('#/settings') ? 'settings'
         : hash.startsWith('#/p/') || hash.startsWith('#/s/') ? null : 'home';

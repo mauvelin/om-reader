@@ -2,10 +2,10 @@
 // 頁面本體 network-first（3 秒逾時才先給快取，網路那一趟照樣跑完寫回快取），
 // 殼層靜態檔 cache-first；跨網域請求（api.github.com）完全不經手。
 // 殼層檔案有改，CACHE_VERSION 往前推一號。
-const CACHE_VERSION = 'om-reader-v7';
+const CACHE_VERSION = 'om-reader-v8';
 const SHELL = ['./', './index.html', './theme.js', './app.js', './app.css', './viewer.html', './viewer.js',
   './vendor/markdown-it.min.js', './vendor/purify.min.js', './manifest.webmanifest',
-  './icons/icon-180.png', './icons/icon-192.png', './icons/icon-512.png', './icons/favicon-32.png', './icons/mark.png'];
+  './icons/icon-180.png', './icons/icon-192.png', './icons/icon-512.png', './icons/favicon-32.png', './icons/mark.png', './icons/mark-center.png'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE_VERSION).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));

@@ -71,7 +71,12 @@ svg.i { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-widt
   border-bottom: 1px solid var(--line);
 }
 .brand { display: inline-flex; align-items: center; justify-content: center; min-width: var(--hit); min-height: var(--hit); }
-.brand .mark { width: 28px; height: 28px; background: var(--accent); -webkit-mask: url("icons/mark.png") center / contain no-repeat; mask: url("icons/mark.png") center / contain no-repeat; }
+/* 頂列標誌＝App 圖示 D 的兩層：墨線（--fg）＋中央八邊形（--accent） */
+.brand .mark-wrap { position: relative; width: 28px; height: 28px; display: block; }
+.brand .mark, .brand .mark-center { position: absolute; inset: 0; }
+.brand .mark { background: var(--fg); -webkit-mask: url("icons/mark.png") center / contain no-repeat; mask: url("icons/mark.png") center / contain no-repeat; }
+.brand .mark-center { background: var(--accent); -webkit-mask: url("icons/mark-center.png") center / contain no-repeat; mask: url("icons/mark-center.png") center / contain no-repeat; }
+body.locked #brand { visibility: hidden; }
 .icon-btn {
   min-width: var(--hit); min-height: var(--hit); display: inline-flex; align-items: center; justify-content: center; padding: 0;
   color: var(--fg); background: transparent; border: 0; border-radius: var(--r-btn); cursor: pointer;
@@ -140,7 +145,7 @@ h1 { font-size: var(--fs-page); line-height: 1.35; margin: 0 0 var(--sp-2); font
 .tile .t { display: flex; align-items: center; gap: var(--sp-2); font-weight: var(--fw-strong); line-height: 1.4; }
 /* 領域地圖：本人在 Notion 設的領域色，方角頂條＋淡染底（只有這裡有六色） */
 .tile.area { box-shadow: var(--shadow-card), inset 0 4px 0 var(--fam, var(--line2)); background: color-mix(in srgb, var(--fam, transparent) 7%, var(--card)); padding-top: calc(var(--sp-3) + 4px); }
-.tile .m { display: block; font-size: var(--fs-label); color: var(--muted); line-height: var(--lh-ui); margin-top: var(--sp-1); }
+.tile .m { display: block; font-size: var(--fs-label); color: var(--muted); line-height: var(--lh-ui); margin-top: var(--sp-1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .dot { width: 9px; height: 9px; background: var(--fam, var(--line2)); flex: none; }
 
 /* ── 按鈕（全站一套，照學習 App）：次要＝卡底＋框；主要＝紫填；安靜＝無框 ── */
@@ -263,3 +268,35 @@ details.aux { margin-top: var(--sp-6); }
 details.aux summary { min-height: var(--hit); display: flex; align-items: center; color: var(--muted); font-size: var(--fs-chip); cursor: pointer; }
 .to-top { position: fixed; right: max(var(--sp-4), env(safe-area-inset-right)); bottom: calc(66px + env(safe-area-inset-bottom)); z-index: 9; width: var(--hit); padding: 0; box-shadow: var(--shadow-card); }
 .empty-box { padding: var(--sp-5) var(--sp-4); border: 1px dashed var(--line2); color: var(--muted); font-size: var(--fs-chip); }
+
+/* 第二批（2026-11-03）：領域色延伸、註腳、逐字稿、課程與日記導覽、圖片全螢幕、HTML 全螢幕 */
+.list a.item.has-area { box-shadow: inset 6px 0 0 var(--fam); }
+.area-tag { gap: 6px; color: var(--fg); text-decoration: none; }
+.area-tag .dot, .filter .dot, .sec-dot { width: 9px; height: 9px; background: var(--fam, var(--line2)); display: inline-block; flex: none; }
+.sec-dot { margin-right: 6px; vertical-align: 1px; }
+.tag.ns { color: var(--muted); background: transparent; border: 1px dashed var(--line2); }
+sup.fn { font-size: .7em; line-height: 0; margin-left: 1px; }
+sup.fn a { text-decoration: none; padding: 0 2px; color: var(--accent); font-weight: var(--fw-strong); }
+ol.fn-list { list-style: none; counter-reset: none; }
+ol.fn-list > li { position: relative; }
+ol.fn-list > li::before { content: attr(value); position: absolute; left: 10px; top: 13px; font-size: var(--fs-label); color: var(--accent); font-weight: var(--fw-strong); }
+ol.fn-list > li > a.item { padding-left: 34px; }
+.md .ts { display: block; font-size: var(--fs-label); color: var(--muted); margin: 1.2em 0 .1em; font-variant-numeric: tabular-nums; scroll-margin-top: 90px; }
+.md .ts.flash { color: var(--accent); font-weight: var(--fw-strong); }
+.ts-jump { font: inherit; font-size: .88em; color: var(--accent); background: var(--accent-weak); border: 0; border-radius: var(--r-btn); padding: 0 4px; margin: 0 2px; cursor: pointer; }
+.doc-nav { display: grid; grid-template-columns: 1fr auto 1fr; gap: var(--sp-2); align-items: center; margin: var(--sp-3) 0 var(--sp-4); }
+.doc-nav > :first-child { justify-self: start; }
+.doc-nav > :nth-child(3) { justify-self: end; }
+.doc-nav > :nth-child(n+4) { grid-column: 1 / -1; justify-self: start; }
+ol.lessons { list-style: none; }
+.zoom { position: fixed; inset: 0; z-index: 50; background: #000000e6; display: flex; flex-direction: column; }
+.zoom-close { align-self: flex-end; margin: max(var(--sp-3), env(safe-area-inset-top)) var(--sp-3) var(--sp-2); }
+.zoom-scroll { flex: 1; overflow: auto; display: flex; align-items: center; justify-content: center; touch-action: pinch-zoom pan-x pan-y; }
+.zoom-scroll img { max-width: 100%; max-height: 100%; }
+.md img { cursor: zoom-in; }
+iframe.htmlview.full { position: fixed; inset: 0; width: 100vw; height: 100dvh; z-index: 40; border: 0; }
+.full-close { position: fixed; z-index: 41; right: var(--sp-3); top: max(var(--sp-3), env(safe-area-inset-top)); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .md img { filter: brightness(.88); } }
+:root[data-theme="dark"] .md img { filter: brightness(.88); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .lock img { width: 72px; height: 72px; opacity: .92; } }
+:root[data-theme="dark"] .lock img { width: 72px; height: 72px; opacity: .92; }
