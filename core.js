@@ -278,6 +278,9 @@ async function hex16(buf) {
 }
 const BUILD_ONLY = new Set(['imgmap.json', 'build-report.md', 'README.md']);   // 只給建置用，手機不下載
 let syncing = false;
+// 下載中的進度與上一次的結果放在全域：離開同步頁再回來，新畫面接得回進度（下載本身不受換頁影響）
+let SYNC_NOW = null;    // { p, plan, textOnly }
+let SYNC_LAST = null;   // { res, plan, textOnly, at }
 // 第一步：比對檔案樹，算出這次要下載多少（還沒下載任何東西）
 async function planSync() {
   const src = await getSource();
@@ -331,6 +334,9 @@ async function planSync() {
 async function runSync(plan, { textOnly = false } = {}, onProgress = () => {}) {
   if (syncing) return { busy: true };
   syncing = true;
+  SYNC_NOW = { p: null, plan, textOnly };
+  const report = onProgress;
+  onProgress = (p) => { SYNC_NOW.p = p; report(p); };
   try {
     if (navigator.storage && navigator.storage.persist) { try { await navigator.storage.persist(); } catch (e) { /* 略過 */ } }
     const { src } = plan;
@@ -382,8 +388,10 @@ async function runSync(plan, { textOnly = false } = {}, onProgress = () => {}) {
     }
     resetCaches();
     if (complete) catPrefetch = null;
-    return { complete, failed, stopErr, downloaded: doneFiles, removed, rate: src.rate, textOnly };
-  } finally { syncing = false; }
+    const res = { complete, failed, stopErr, downloaded: doneFiles, removed, rate: src.rate, textOnly };
+    SYNC_LAST = { res, plan, textOnly, at: Date.now() };
+    return res;
+  } finally { syncing = false; SYNC_NOW = null; }
 }
 
 /* ════════ 資料存取（記憶體快取） ════════ */

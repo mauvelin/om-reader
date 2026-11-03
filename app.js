@@ -86,25 +86,45 @@ async function viewSettings() {
       try { add('持久儲存', (await navigator.storage.persisted()) ? '是' : '否'); } catch (e) { /* 略過 */ }
     }
   };
-  const doSync = async (plan, textOnly) => {
-    choice.hidden = true; checkBtn.disabled = true; prog.hidden = false;
-    try {
-      const res = await runSync(plan, { textOnly }, (p) => {
-        prog.max = Math.max(1, p.totalBytes); prog.value = p.doneBytes;
-        out.textContent = `下載中 ${p.doneFiles}／${p.totalFiles}（${fmtMB(p.doneBytes)}／${fmtMB(p.totalBytes)}）${p.failed ? `，失敗 ${p.failed}` : ''}`;
-        showQuota(p.rate);
-      });
+  const showProg = (p) => {
+    prog.max = Math.max(1, p.totalBytes); prog.value = p.doneBytes;
+    out.textContent = `下載中 ${p.doneFiles}／${p.totalFiles}（${fmtMB(p.doneBytes)}／${fmtMB(p.totalBytes)}）${p.failed ? `，失敗 ${p.failed}` : ''}。離開這一頁也會繼續下載。`;
+    showQuota(p.rate);
+  };
+  const showResult = (res, plan, textOnly) => {
       showQuota(res.rate);
       if (res.complete) updateInfo = null;
-      if (res.busy) out.textContent = '已在同步中。';
-      else if (res.complete) out.textContent = `同步完成：下載 ${res.downloaded} ${plan.packed ? '包' : '個檔'}，清掉 ${res.removed} 筆舊資料。${textOnly ? '圖片與附件留到下次。' : ''}`;
+      if (res.complete) out.textContent = `同步完成：下載 ${res.downloaded} ${plan.packed ? '包' : '個檔'}，清掉 ${res.removed} 筆舊資料。${textOnly ? '圖片與附件留到下次。' : ''}`;
       else if (res.stopErr && res.stopErr.rateLimited) out.textContent = `GitHub 每小時額度用完，已下載的都保留了。${res.rate && res.rate.reset ? new Date(res.rate.reset * 1000).toLocaleTimeString('zh-TW') + ' 後' : '稍後'}再同步會接著下載。`;
       else if (res.stopErr) out.textContent = `同步中止：${res.stopErr.message}`;
       else out.textContent = `同步未完成：${res.failed} 個檔下載失敗，再同步一次會補抓。`;
+  };
+  // 回到這一頁時下載還在跑：接上進度，跑完顯示結果
+  const watch = () => {
+    choice.hidden = true; checkBtn.disabled = true; prog.hidden = false;
+    if (SYNC_NOW && SYNC_NOW.p) showProg(SYNC_NOW.p); else out.textContent = '下載中…離開這一頁也會繼續下載。';
+    const timer = setInterval(() => {
+      if (!document.contains(prog)) { clearInterval(timer); return; }
+      if (SYNC_NOW && SYNC_NOW.p) { showProg(SYNC_NOW.p); return; }
+      if (syncing) return;
+      clearInterval(timer);
+      checkBtn.disabled = false; prog.hidden = true;
+      if (SYNC_LAST) showResult(SYNC_LAST.res, SYNC_LAST.plan, SYNC_LAST.textOnly);
+      fillInfo();
+    }, 500);
+  };
+  const doSync = async (plan, textOnly) => {
+    let busy = false;
+    choice.hidden = true; checkBtn.disabled = true; prog.hidden = false;
+    try {
+      const res = await runSync(plan, { textOnly }, showProg);
+      if (res.busy) { busy = true; return; }
+      showResult(res, plan, textOnly);
     } catch (e) {
       out.textContent = '同步失敗：' + (e.message || e);
     } finally {
-      checkBtn.disabled = false; checkBtn.className = 'btn primary'; prog.hidden = true; fillInfo();
+      checkBtn.className = 'btn primary';
+      if (busy) watch(); else { checkBtn.disabled = false; prog.hidden = true; fillInfo(); }
     }
   };
   checkBtn.addEventListener('click', async () => {
@@ -113,6 +133,7 @@ async function viewSettings() {
     if (!(r === 'local' || /^[\w.-]+\/[\w.-]+$/.test(r)) || (!tk && r !== 'local')) { out.textContent = '請填 repo（擁有者/名稱）與 token。'; return; }
     await setConfig(r, tk);
     token.value = '';
+    if (syncing) { watch(); return; }
     checkBtn.disabled = true; choice.hidden = true;
     out.textContent = '比對檔案清單…';
     try {
@@ -148,6 +169,7 @@ async function viewSettings() {
     h('p', { class: 'muted' }, '只下載有變動的檔。repo 名稱與 token 只存在這支手機，token 與所有資料都以 Face ID 導出的金鑰加密。token 到期後在這裡貼上新的即可。'),
     h('div', { class: 'row' }, lockBtn, clearBtn));
   fillInfo();
+  if (syncing) watch();   // 下載途中離開又回來
 }
 
 function lockScreen(title, text, btnLabel, action, extra) {
