@@ -345,7 +345,7 @@ async function viewHome() {
   }
   // 繼續看
   const hist = (await getHistory()).map((x) => cat.byPath.get(x.p)).filter(Boolean).slice(0, 3);
-  if (hist.length) kids.push(secTitle('繼續看', '#/history', '全部'), listOf(hist.map((d) => itemLink(d, null, { resume: true }))));
+  if (hist.length) kids.push(secTitle('繼續看', '#/history', '全部看過'), listOf(hist.map((d) => itemLink(d, null, { resume: true }))));
   if (typeof continueSection === 'function') kids.push(...await continueSection().catch(() => []));
   // 領域地圖：讀 catalog.ui.home_map 指定的頁面裡「### 名稱 → [[頁面]] 說明」的行
   const idx = ui.home_map ? cat.byPath.get(ui.home_map) : null;
@@ -398,21 +398,71 @@ async function viewBrowse() {
   setView(...kids);
 }
 
-async function viewHistory() {
+// 看過：筆記（這支手機的閱讀紀錄）＋講次（學習紀錄的「最近開過」）＋練習（練習進度），合在一起依日期排。
+// 從首頁「繼續看」「繼續上課」的「全部」進來；?k=note｜lesson｜practice 只看一種。
+async function viewHistory(qs) {
   const cat = await catalog();
   if (!cat) return emptyState();
-  const hist = (await getHistory()).map((x) => [cat.byPath.get(x.p), x.at]).filter((x) => x[0]);
-  const clear = h('button', { type: 'button', class: 'btn quiet' }, '清除紀錄');
-  clear.addEventListener('click', async () => { await kvSet('history', await seal(te.encode('[]'))); viewHistory(); });
+  const want = new URLSearchParams(qs || '').get('k') || 'all';
+  const toMs = (s) => { const t = typeof recTime === 'function' ? recTime(s) / 1000 : Date.parse(s); return Number.isFinite(t) ? t : 0; };
+  const hm = (at) => new Date(at).toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' });
+  const rows = [];
+  for (const x of await getHistory()) {
+    const d = cat.byPath.get(x.p);
+    if (d) rows.push({ k: 'note', at: x.at, li: () => itemLink(d, h('span', { class: 'm' }, hm(x.at)), { resume: true }) });
+  }
+  if (typeof lrec === 'function') {
+    await lrec();
+    const ci = await courseIndex().catch(() => null);
+    if (ci) {
+      for (const [id, r] of Object.entries(LREC.recent)) {
+        const x = ci.lessonById.get(id);
+        if (!x) continue;
+        const at = toMs(r.at);
+        rows.push({ k: 'lesson', at, li: () => {
+          const p = lessonProgress(x.lesson);
+          const state = p ? (p.completed ? '・已看完' : `・看到 ${clock(p.t_s)}${p.pct != null ? `（${p.pct}%）` : ''}`) : '';
+          return h('li', null, areaColor(h('a', { class: 'item', href: '#/lesson/' + encodeURIComponent(x.lesson.id) },
+            h('span', { class: 't' }, `${x.lesson.order ? x.lesson.order + '　' : ''}${x.lesson.lesson_title || x.lesson.title}`),
+            h('span', { class: 'm' }, `講次・${x.course.title}・${hm(at)}${state}`)), null, x.course.category));
+        } });
+      }
+    }
+    const pd = typeof practiceData === 'function' ? await practiceData().catch(() => null) : null;
+    if (pd) {
+      for (const [id, r] of Object.entries(LREC.practice_progress)) {
+        const it = pd.byId.get(id);
+        if (!it) continue;
+        const at = toMs(r.at);
+        rows.push({ k: 'practice', at, li: () => h('li', null, h('a', { class: 'item', href: '#/practice/item/' + encodeURIComponent(id) },
+          h('span', { class: 't' }, it.title),
+          h('span', { class: 'm' }, `練習・${[it.style, it.teacher].filter(Boolean).join('・')}・${hm(at)}`))) });
+      }
+    }
+  }
+  rows.sort((a, b) => b.at - a.at);
+  const KINDS = [['all', '全部'], ['note', '筆記'], ['lesson', '講次'], ['practice', '練習']];
+  const count = (k) => (k === 'all' ? rows.length : rows.filter((r) => r.k === k).length);
+  const chips = h('div', { class: 'filter-row' }, KINDS.filter(([k]) => k === 'all' || count(k)).map(([k, name]) =>
+    h('button', { type: 'button', class: 'filter', 'aria-pressed': String(k === want), onclick: () => {
+      const q = k === 'all' ? '' : 'k=' + k;
+      history.replaceState(null, '', location.pathname + location.search + '#/history' + (q ? '?' + q : ''));
+      viewHistory(q);
+    } }, `${name} ${count(k)}`)));
+  const shown = rows.filter((r) => want === 'all' || r.k === want).slice(0, 200);
   const dayKey = (t) => { const x = new Date(t); x.setHours(0, 0, 0, 0); return x.getTime(); };
   const today = dayKey(Date.now());
   const label = (k) => (k === today ? '今天' : k === today - 86400000 ? '昨天' : new Date(k).toLocaleDateString('zh-TW', { month: 'numeric', day: 'numeric', weekday: 'short' }));
   const groups = new Map();
-  for (const [d, at] of hist) { const k = dayKey(at); if (!groups.has(k)) groups.set(k, []); groups.get(k).push([d, at]); }
-  const kids = [h('h1', null, '看過'), h('p', { class: 'page-sub' }, '最近打開過的 100 頁，只存在這支手機（加密）。')];
-  if (!hist.length) kids.push(h('p', { class: 'empty-box' }, '還沒有看過任何一頁。'));
-  for (const [k, xs] of groups) kids.push(secTitle(label(k)), listOf(xs.map(([d, at]) => itemLink(d, h('span', { class: 'm' }, new Date(at).toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' })), { resume: true }))));
-  if (hist.length) kids.push(h('div', { class: 'row' }, clear));
+  for (const r of shown) { const k = dayKey(r.at); if (!groups.has(k)) groups.set(k, []); groups.get(k).push(r); }
+  const kids = [h('h1', null, '看過'), h('p', { class: 'page-sub' }, '筆記的紀錄只存在這支手機（加密，最近 100 頁）；講次與練習來自學習紀錄，會和電腦、其他裝置同步。'), chips];
+  if (!shown.length) kids.push(h('p', { class: 'empty-box' }, '還沒有看過任何東西。'));
+  for (const [k, xs] of groups) kids.push(secTitle(label(k)), listOf(xs.map((r) => r.li())));
+  if ((want === 'all' || want === 'note') && rows.some((r) => r.k === 'note')) {
+    const clear = h('button', { type: 'button', class: 'btn quiet' }, '清除筆記的閱讀紀錄');
+    clear.addEventListener('click', async () => { await kvSet('history', await seal(te.encode('[]'))); viewHistory(qs); });
+    kids.push(h('div', { class: 'row' }, clear));
+  }
   setView(...kids);
 }
 

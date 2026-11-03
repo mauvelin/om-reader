@@ -215,7 +215,8 @@ async function route() {
     curHash = hash;
     if (restoreView(hash)) return;
     if (hash.startsWith('#/browse')) await viewBrowse();
-    else if (hash.startsWith('#/history')) await viewHistory();
+    else if (hash.startsWith('#/history')) await viewHistory(hash.split('?')[1] || '');
+    else if (hash.startsWith('#/courses')) { const cat = await catalog(); if (!cat) await emptyState(); else await viewCourses(cat, 'self/resources'); }
     else if (hash.startsWith('#/p/')) await viewPage(dec(hash.slice(4)));
     else if (hash.startsWith('#/l/')) await viewLane(dec(hash.slice(4)));
     else if (hash.startsWith('#/practice/item/')) { const [id, qs] = hash.slice(16).split('?'); await viewPracticeItem(decodeURIComponent(id), qs); }
@@ -240,12 +241,14 @@ $('#qform').addEventListener('submit', (e) => {
 let navDepth = 0;
 window.addEventListener('hashchange', () => { navDepth++; route(); });
 function updateChrome(hash, locked) {
-  const deep = /^#\/(p|l|s|c|course|lesson|practice\/item)\//.test(hash);
+  const deep = /^#\/(p|l|s|c|course|lesson|practice\/item)\/|^#\/history/.test(hash);
   $('#back').hidden = locked || !deep || navDepth === 0;
   $('#brand').hidden = !$('#back').hidden;
-  const tab = hash.startsWith('#/browse') || hash.startsWith('#/l/') || hash.startsWith('#/c/') || hash.startsWith('#/course/') || hash.startsWith('#/lesson/') ? 'browse'
+  // 課程頁、講次頁、分類裡的 self/resources 都算「課程」分頁；看過從首頁進，算首頁
+  const tab = hash.startsWith('#/courses') || hash.startsWith('#/c/') || hash.startsWith('#/course/') || hash.startsWith('#/lesson/') || hash.startsWith('#/l/' + enc('self/resources')) ? 'courses'
+    : hash.startsWith('#/browse') || hash.startsWith('#/l/') ? 'browse'
     : hash.startsWith('#/practice') ? 'practice'
-    : hash.startsWith('#/history') ? 'history'
+    : hash.startsWith('#/history') ? 'home'
       : hash.startsWith('#/settings') ? 'settings'
         : hash.startsWith('#/p/') || hash.startsWith('#/s/') ? null : 'home';
   document.querySelectorAll('.tabs a').forEach((a) => {

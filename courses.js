@@ -149,7 +149,7 @@ async function continueSection() {
   const rows = Object.entries(LREC.recent).sort((a, b) => String(b[1].at).localeCompare(String(a[1].at)))
     .map(([id]) => ci.lessonById.get(id)).filter((x) => x && !(lessonProgress(x.lesson) || {}).completed).slice(0, 3);
   if (!rows.length) return [];
-  return [secTitle('繼續上課'), listOf(rows.map(({ lesson: l, course: c }) => {
+  return [secTitle('繼續上課', '#/history?k=lesson', '全部'), listOf(rows.map(({ lesson: l, course: c }) => {
     const p = lessonProgress(l);
     return h('li', null, areaColor(h('a', { class: 'item', href: '#/lesson/' + l.id },
       h('span', { class: 't' }, `${l.order ? l.order + '　' : ''}${l.lesson_title || l.title}`),
@@ -174,7 +174,7 @@ async function viewCourses(cat, lane) {
   const inCourse = new Set(ci.list.flatMap((c) => [...c.lessons.map((l) => vp(l.transcript && l.transcript.md)), ...c.handouts.map((x) => vp(x.md)), ...c.notes.map((x) => vp(x.md))]));
   const loose = cat.docs.filter((d) => d.l === lane && d.s != null && !inCourse.has(d.p) && !isAux(d));
   const total = ci.list.reduce((n, c) => n + c.lessons.length, 0);
-  const kids = [h('div', { class: 'doc-head' }, h('h1', null, laneName(lane))),
+  const kids = [h('div', { class: 'doc-head' }, h('h1', null, '課程')),
     h('p', { class: 'page-sub' }, `${laneLabel(lane) ? laneLabel(lane) + '・' : ''}${ci.list.length} 門課・${total} 講・依課程`), courseSearchBox(null)];
   if (nNotesOnly) {
     const box = h('input', { type: 'checkbox', id: 'notes-only' });
@@ -253,7 +253,7 @@ async function viewCourseById(id, qs) {
   if (!c) return setView(h('h1', null, '找不到這門課'));
   await lrec();
   const done = c.lessons.filter((l) => (lessonProgress(l) || {}).completed).length;
-  const head = areaColor(h('div', { class: 'doc-head' }, h('nav', { class: 'crumb' }, h('a', { href: '#/l/' + enc('self/resources') }, 'self/resources・課程')),
+  const head = areaColor(h('div', { class: 'doc-head' }, h('nav', { class: 'crumb' }, h('a', { href: '#/courses' }, '課程')),
     h('h1', null, c.title)), null, c.category);
   const sub = h('p', { class: 'page-sub' }, `${c.lessons.length} 講・已看完 ${done}／${c.lessons.length}`);
   const tabs = [['lessons', '講次'], ['digest', '整門課摘要']];
