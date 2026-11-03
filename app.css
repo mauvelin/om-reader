@@ -5,6 +5,9 @@
 :root {
   color-scheme: light;
   --dye-madder: #A8463A; --dye-persimmon: #C4763A; --dye-apricot: #B8933A; --dye-moss: #6B8A4F; --dye-indigo: #3F6A94; --dye-mulberry: #6E5A94;
+  --dye-stone: #777064;   /* 石灰褐：多日遊站「休息驛站」色，人物（跨領域）用 */
+  --ink-madder: #A8463A; --ink-persimmon: #a16130; --ink-apricot: #886d2b; --ink-moss: #5e7946; --ink-indigo: #3F6A94; --ink-mulberry: #6E5A94; --ink-stone: #6b6459;
+  --link-line: var(--ink-stone);
   --bg: #f8f6f1; --fg: #26262b; --muted: #6b675f; --faint: #8a8478; --card: #ffffff; --line: #e3ded3; --line2: #cec7b9;
   --chip: #f0ece3; --raised: #ffffff; --field-line: #958d80;
   --accent: #6E5A94; --accent-weak: #ece8f2; --warn: #a16130; --danger: #A8463A; --hl: #f1e9d8; --on-color: #ffffff;
@@ -30,6 +33,9 @@
     --chip: #272a31; --raised: #40434c; --field-line: #6a6e78;
     --accent: #AD9CCF; --accent-weak: #322d3d; --warn: #E5A66E; --danger: #D98D7E; --hl: #353228; --on-color: #16171b;
     --dye-madder: #D98D7E; --dye-persimmon: #E5A66E; --dye-apricot: #D9BE6A; --dye-moss: #9EBB80; --dye-indigo: #86AFD0; --dye-mulberry: #AD9CCF;
+    --dye-stone: #B9B0A1;
+    --ink-madder: #D98D7E; --ink-persimmon: #E5A66E; --ink-apricot: #D9BE6A; --ink-moss: #9EBB80; --ink-indigo: #86AFD0; --ink-mulberry: #AD9CCF; --ink-stone: #B9B0A1;
+    --link-line: var(--ink-stone);
     --shadow-card: 0 1px 2px #00000066, 0 4px 14px #00000059;
     --bar-bg: #16171be6;
     --paper: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='260' height='260'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 .22 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
@@ -41,6 +47,9 @@
   --chip: #272a31; --raised: #40434c; --field-line: #6a6e78;
   --accent: #AD9CCF; --accent-weak: #322d3d; --warn: #E5A66E; --danger: #D98D7E; --hl: #353228; --on-color: #16171b;
   --dye-madder: #D98D7E; --dye-persimmon: #E5A66E; --dye-apricot: #D9BE6A; --dye-moss: #9EBB80; --dye-indigo: #86AFD0; --dye-mulberry: #AD9CCF;
+    --dye-stone: #B9B0A1;
+    --ink-madder: #D98D7E; --ink-persimmon: #E5A66E; --ink-apricot: #D9BE6A; --ink-moss: #9EBB80; --ink-indigo: #86AFD0; --ink-mulberry: #AD9CCF; --ink-stone: #B9B0A1;
+    --link-line: var(--ink-stone);
   --shadow-card: 0 1px 2px #00000066, 0 4px 14px #00000059;
   --bar-bg: #16171be6;
   --paper: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='260' height='260'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 .22 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
@@ -224,7 +233,9 @@ progress::-moz-progress-bar { background: var(--accent); }
 pre.raw.wrap { white-space: pre-wrap; overflow-wrap: anywhere; }
 .md code { font: .88em var(--font-mono); background: var(--chip); padding: 1px 4px; }
 .md pre code { background: none; padding: 0; font-size: 13px; }
-.md a { text-decoration-thickness: 1px; text-underline-offset: 3px; }
+/* 內文連結：字用墨色，2px 底線用該頁的領域色（墨色版），沒有領域的頁用石灰褐。紫只留給按鈕與「目前位置」 */
+.md a { color: var(--fg); text-decoration: underline; text-decoration-color: var(--link-line); text-decoration-thickness: 2px; text-underline-offset: 4px; }
+.md a:active { color: var(--accent); }
 .md hr { border: 0; border-top: 1px solid var(--line); margin: 2em 0; }
 .table-wrap {
   overflow-x: auto; margin: var(--sp-3) 0;
@@ -276,7 +287,7 @@ details.aux summary { min-height: var(--hit); display: flex; align-items: center
 .sec-dot { margin-right: 6px; vertical-align: 1px; }
 .tag.ns { color: var(--muted); background: transparent; border: 1px dashed var(--line2); }
 sup.fn { font-size: .7em; line-height: 0; margin-left: 1px; }
-sup.fn a { text-decoration: none; padding: 0 2px; color: var(--accent); font-weight: var(--fw-strong); }
+sup.fn a { text-decoration: none; padding: 0 2px; color: var(--link-line); font-weight: var(--fw-strong); }
 ol.fn-list { list-style: none; counter-reset: none; }
 ol.fn-list > li { position: relative; }
 ol.fn-list > li::before { content: attr(value); position: absolute; left: 10px; top: 13px; font-size: var(--fs-label); color: var(--accent); font-weight: var(--fw-strong); }
@@ -300,3 +311,10 @@ iframe.htmlview.full { position: fixed; inset: 0; width: 100vw; height: 100dvh; 
 :root[data-theme="dark"] .md img { filter: brightness(.88); }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .lock img { width: 72px; height: 72px; opacity: .92; } }
 :root[data-theme="dark"] .lock img { width: 72px; height: 72px; opacity: .92; }
+
+/* 第三批：檔案卡、有更新提示 */
+.file-card { display: grid; grid-template-columns: auto 1fr; gap: var(--sp-3); align-items: center; }
+.file-card .btn { grid-column: 1 / -1; justify-self: start; }
+.file-ext { width: 56px; height: 64px; border: 1px solid var(--line2); display: flex; align-items: flex-end; justify-content: center; padding-bottom: 8px; font-size: var(--fs-label); font-weight: var(--fw-strong); color: var(--muted); background: var(--bg); }
+.file-meta .t { font-weight: var(--fw-strong); overflow-wrap: anywhere; }
+a.update-note { display: block; color: var(--fg); text-decoration: none; margin-bottom: var(--sp-3); box-shadow: inset 4px 0 0 var(--accent); background: var(--accent-weak); }

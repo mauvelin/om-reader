@@ -147,6 +147,20 @@ async function setupLock() {
   await kvSet('lock', lock);
   KEY = key;
 }
+let updateInfo = null;
+async function checkUpdates() {
+  try {
+    if (!navigator.onLine || !KEY) return;
+    const plan = await planSync();
+    const n = plan.want.length + plan.stale.length;
+    updateInfo = n ? { files: n, bytes: plan.textBytes + plan.mediaBytes } : null;
+    const slot = document.querySelector('#update-slot');
+    if (slot && updateInfo) slot.replaceChildren(updateBanner());
+  } catch (e) { /* 沒網路、token 過期：等使用者自己到同步頁看 */ }
+}
+function updateBanner() {
+  return h('a', { class: 'note update-note', href: '#/settings' }, `有新資料：${updateInfo.files} 個檔、${fmtMB(updateInfo.bytes)}。到「同步」下載。`);
+}
 async function unlock() {
   const lock = await kvGet('lock');
   const prf = await prfFromPasskey(lock);
@@ -154,6 +168,7 @@ async function unlock() {
   try { if (td.decode(await open_(lock.check, key)) !== 'om-reader-ok') throw new Error(); }
   catch (e) { throw new Error('金鑰不符：這把通行金鑰不是當初設定的那一把'); }
   KEY = key;
+  setTimeout(checkUpdates, 1500);
 }
 function lockNow() {
   KEY = null;
@@ -582,7 +597,9 @@ function snippet(text, terms) {
 
 /* ════════ 區塊名稱 ════════ */
 // 區塊名稱與排序來自資料包（catalog.ui），公開的程式殼裡不寫內容結構
-const laneName = (l) => (CAT && CAT.ui && CAT.ui.lanes && CAT.ui.lanes[l]) || l;
+const laneName = (l) => l;   // 區塊一律以資料夾名顯示（本人 2026-11-03）
+const laneLabel = (l) => (CAT && CAT.ui && CAT.ui.lane_labels && CAT.ui.lane_labels[l]) || '';
+const laneFull = (l) => (laneLabel(l) ? `${l}・${laneLabel(l)}` : l);
 const laneOrder = () => (CAT && CAT.ui && CAT.ui.lane_order) || [];
 function docMeta(d) {
   const bits = [laneName(d.l)];
@@ -598,7 +615,7 @@ function docTitle(d) { return d.t || basename(d.p); }
 function dyeOf(area) { return area && CAT && CAT.ui && CAT.ui.area_dyes ? CAT.ui.area_dyes[area] : null; }
 function areaColor(el, d, area) {
   const dye = dyeOf(area || (d && d.ar));
-  if (dye) { el.style.setProperty('--fam', `var(--dye-${dye})`); el.classList.add('has-area'); }
+  if (dye) { el.style.setProperty('--fam', `var(--dye-${dye})`); el.style.setProperty('--fam-ink', `var(--ink-${dye})`); el.classList.add('has-area'); }
   return el;
 }
 // 領域 chip：方點＋名稱，有 MOC 頁就可點（顏色一定和名稱一起出現，不單靠顏色）
@@ -695,7 +712,7 @@ async function viewHome() {
   const cat = await catalog();
   if (!cat) return emptyState();
   const ui = cat.ui || {};
-  const kids = [];
+  const kids = [h('div', { id: 'update-slot' }, updateInfo ? updateBanner() : null)];
   const st = (await kvGet('state')) || {};
   if (st.files) {
     const have = await idbFileCount();
@@ -749,7 +766,7 @@ async function viewBrowse() {
     const lanes = g.lanes.filter((l) => counts.has(l)).sort(byOrder);
     if (!lanes.length) continue;
     const rows = listOf(lanes.map((l) => h('li', null, h('a', { class: 'item', href: '#/l/' + enc(l) },
-      h('span', { class: 't' }, laneName(l)), h('span', { class: 'm' }, `${counts.get(l).toLocaleString()} 則`)))));
+      h('span', { class: 't' }, laneName(l)), h('span', { class: 'm' }, `${laneLabel(l) ? laneLabel(l) + '・' : ''}${counts.get(l).toLocaleString()} 則`)))));
     if (g.name === '/') kids.push(h('details', { class: 'aux' }, h('summary', null, `/（repo 根目錄下的資料夾，${lanes.length} 個）`), rows));
     else kids.push(secTitle(g.name), rows);
   }
@@ -778,12 +795,18 @@ async function viewHistory() {
   const cat = await catalog();
   if (!cat) return emptyState();
   const hist = (await getHistory()).map((x) => [cat.byPath.get(x.p), x.at]).filter((x) => x[0]);
-  const fmt = (t) => new Date(t).toLocaleString('zh-TW', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
   const clear = h('button', { type: 'button', class: 'btn quiet' }, '清除紀錄');
   clear.addEventListener('click', async () => { await kvSet('history', await seal(te.encode('[]'))); viewHistory(); });
-  setView(h('h1', null, '看過'), h('p', { class: 'page-sub' }, '最近打開過的 100 頁，只存在這支手機（加密）。'),
-    listOf(hist.map(([d, at]) => itemLink(d, h('span', { class: 'm' }, `看過 ${fmt(at)}`), { resume: true })), '還沒有看過任何一頁。'),
-    hist.length ? h('div', { class: 'row' }, clear) : null);
+  const dayKey = (t) => { const x = new Date(t); x.setHours(0, 0, 0, 0); return x.getTime(); };
+  const today = dayKey(Date.now());
+  const label = (k) => (k === today ? '今天' : k === today - 86400000 ? '昨天' : new Date(k).toLocaleDateString('zh-TW', { month: 'numeric', day: 'numeric', weekday: 'short' }));
+  const groups = new Map();
+  for (const [d, at] of hist) { const k = dayKey(at); if (!groups.has(k)) groups.set(k, []); groups.get(k).push([d, at]); }
+  const kids = [h('h1', null, '看過'), h('p', { class: 'page-sub' }, '最近打開過的 100 頁，只存在這支手機（加密）。')];
+  if (!hist.length) kids.push(h('p', { class: 'empty-box' }, '還沒有看過任何一頁。'));
+  for (const [k, xs] of groups) kids.push(secTitle(label(k)), listOf(xs.map(([d, at]) => itemLink(d, h('span', { class: 'm' }, new Date(at).toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' })), { resume: true }))));
+  if (hist.length) kids.push(h('div', { class: 'row' }, clear));
+  setView(...kids);
 }
 
 const isAux = (d) => /^_/.test(basename(d.p)) || basename(d.p) === 'index.md' || /\.(json|jsonl)$/.test(d.p);
@@ -813,7 +836,7 @@ async function viewLane(arg) {
     pool = docs.filter((d) => (!state.year || String(d.d || '').startsWith(state.year))
       && (!state.written || lane !== ui.journal_lane || d.w) && (!state.area || (d.areas || [d.ar]).includes(state.area)));
     list.replaceChildren(); shown = 0; add();
-    sub.textContent = `${pool.length.toLocaleString()} 則・${dated ? '新到舊' : '依名稱'}`;
+    sub.textContent = `${laneLabel(lane) ? laneLabel(lane) + '・' : ''}${pool.length.toLocaleString()} 則・${dated ? '新到舊' : '依名稱'}`;
   };
   const add = () => {
     for (const d of pool.slice(shown, shown + 100)) list.append(itemLink(d));
@@ -848,7 +871,7 @@ function viewCourses(cat, lane) {
   cs.forEach((c, i) => { const k = c.cat || '其他'; if (!byCat.has(k)) byCat.set(k, []); byCat.get(k).push([c, i]); });
   const inCourse = new Set(cs.flatMap((c) => [...c.lessons.map((l) => l.p), ...c.handouts, ...c.notes]));
   const loose = cat.docs.filter((d) => d.l === lane && d.s != null && !inCourse.has(d.p) && !isAux(d));
-  const kids = [h('div', { class: 'doc-head' }, h('h1', null, laneName(lane))), h('p', { class: 'page-sub' }, `${cs.length} 門課・${cs.reduce((n, c) => n + c.lessons.length, 0)} 講・依課程`)];
+  const kids = [h('div', { class: 'doc-head' }, h('h1', null, laneName(lane))), h('p', { class: 'page-sub' }, `${laneLabel(lane) ? laneLabel(lane) + '・' : ''}${cs.length} 門課・${cs.reduce((n, c) => n + c.lessons.length, 0)} 講・依課程`)];
   for (const [k, list] of [...byCat].sort((a, b) => b[1].length - a[1].length)) {
     kids.push(h('div', { class: 'sec-title' }, h('span', null, areaColor(h('span', { class: 'sec-dot' }), null, k), k)),
       listOf(list.map(([c, i]) => h('li', null, areaColor(h('a', { class: 'item', href: '#/c/' + i }, h('span', { class: 't' }, c.t),
@@ -870,14 +893,15 @@ async function viewPage(path) {
   if (!cat) return emptyState();
   const d = cat.byPath.get(path);
   if (!d) return setView(h('h1', null, '找不到這一頁'), h('p', { class: 'muted' }, path));
-  const crumb = h('nav', { class: 'crumb', 'aria-label': '所在位置' }, h('a', { href: '#/l/' + enc(d.l) }, laneName(d.l)));
+  const crumb = h('nav', { class: 'crumb', 'aria-label': '所在位置' }, h('a', { href: '#/l/' + enc(d.l) }, laneFull(d.l)));
   const title = h('h1', { class: docTitle(d).length > 28 ? 'long' : null }, docTitle(d));
   const head = areaColor(h('div', { class: 'doc-head' }, crumb, title), d);
   const areas = d.areas && d.areas.length ? d.areas : (d.ar && !/^vault\/wiki\/MOC\//.test(d.p) ? [d.ar] : []);
   const ns = d.ns && cat.ui && cat.ui.nonself ? cat.ui.nonself[d.ns] : null;
   const chips = h('div', { class: 'chips' }, areas.map(areaChip), [d.d && String(d.d).slice(0, 10), d.a, d.src, d.l === 'self/cards' && d.prov && `來源：${d.prov}`]
     .filter(Boolean).map((x) => h('span', { class: 'tag' }, x)), ns ? h('span', { class: 'tag ns' }, ns) : null,
-    d.unrev ? h('span', { class: 'tag warn' }, '未審') : null);
+    d.unrev ? h('span', { class: 'tag warn' }, '未審') : null,
+    d.st === 'raw' ? h('span', { class: 'tag ns' }, '還沒折進 wiki') : null);
   pushHistory(d.p).catch(() => {});
   const actions = h('div', { class: 'doc-actions' });
   if (d.nid) actions.append(...notionButtons(d.nid));
@@ -890,6 +914,8 @@ async function viewPage(path) {
     else if (ext === 'md') {
       const fn = /^wiki\/(concepts|people)$/.test(d.l) ? { map: new Map() } : null;
       const mdRoot = renderMarkdown(splitFrontmatter(text).body, d.p, fn);
+      const pageDye = dyeOf(d.ar);
+      if (pageDye) mdRoot.style.setProperty('--link-line', `var(--ink-${pageDye})`);
       d._fn = fn;
       labelSections(mdRoot, d);
       foldRoutingRules(mdRoot, d);
@@ -918,7 +944,9 @@ async function viewPage(path) {
         const closeFull = h('button', { type: 'button', class: 'btn full-close', hidden: true, onclick: () => { frame.classList.remove('full'); closeFull.hidden = true; } }, '關閉全螢幕');
         body.append(frame, closeFull, h('p', { class: 'muted' }, 'HTML 頁在隔離框架中執行，讀不到 App 的資料，也不會連到外部網站（地圖圖磚這類線上資源不顯示）。'));
       }
-      else body.append(h('a', { class: 'btn primary', href: url, target: '_blank', rel: 'noopener' }, ext === 'pdf' ? '打開 PDF' : '打開檔案'), h('p', { class: 'muted' }, fmtMB(b.size)));
+      else body.append(h('div', { class: 'card file-card' }, h('div', { class: 'file-ext' }, ext.toUpperCase() || '檔案'),
+        h('div', { class: 'file-meta' }, h('div', { class: 't' }, basename(d.p)), h('div', { class: 'muted' }, fmtMB(b.size))),
+        h('a', { class: 'btn primary', href: url, target: '_blank', rel: 'noopener' }, ext === 'pdf' ? '打開 PDF' : '打開檔案')));
     }
   }
   const kids = [head, chips];
@@ -935,6 +963,12 @@ async function viewPage(path) {
   } else {
     const outs = (L.out.get(d.p) || []).map((p) => cat.byPath.get(p)).filter((x) => x && x.nid && x.p !== d.p);
     if (outs.length && !d.nid) kids.push(secTitle(`引用的來源（${outs.length}）`), listOf(outs.slice(0, 60).map((x) => itemLink(x))));
+  }
+  if (d.l === 'wiki/people') {   // 人物頁：此作者的原始筆記（raw 的 author 對上人物頁的 handle 或名字）
+    const keys = [d.hd, docTitle(d)].filter(Boolean).map((k) => String(k).toLowerCase().replace(/^@/, ''));
+    const own = cat.docs.filter((x) => x.l === 'raw' && x.a && keys.some((k) => String(x.a).toLowerCase().replace(/^@/, '').includes(k)))
+      .sort((a, b) => String(b.d || '').localeCompare(String(a.d || '')));
+    if (own.length) kids.push(h('details', { class: 'aux', open: own.length <= 8 }, h('summary', null, `此作者的原始筆記（${own.length}）`), listOf(own.slice(0, 200).map((x) => itemLink(x)))));
   }
   const mocArea = (d.p.match(/^vault\/wiki\/MOC\/(.+)\.md$/) || [])[1];
   if (mocArea) kids.push(...areaExtras(cat, mocArea));
@@ -1146,6 +1180,7 @@ async function viewSettings() {
         prog.max = Math.max(1, p.totalBytes); prog.value = p.doneBytes;
         out.textContent = `下載中 ${p.doneFiles}／${p.totalFiles} 個檔（${fmtMB(p.doneBytes)}／${fmtMB(p.totalBytes)}）${p.failed ? `，失敗 ${p.failed}` : ''}`;
       });
+      if (res.complete) updateInfo = null;
       if (res.busy) out.textContent = '已在同步中。';
       else if (res.complete) out.textContent = `同步完成：下載 ${res.downloaded} 個檔，移除 ${res.removed} 個舊檔。${textOnly ? '圖片與附件留到下次。' : ''}`;
       else if (res.stopErr && res.stopErr.rateLimited) out.textContent = `GitHub 每小時額度用完，已下載的都保留了。${res.rate && res.rate.reset ? new Date(res.rate.reset * 1000).toLocaleTimeString('zh-TW') + ' 後' : '稍後'}再同步會接著下載。`;
