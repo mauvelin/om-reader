@@ -357,17 +357,19 @@ label.check input { width: 20px; height: 20px; accent-color: var(--accent); }
 .rate-row { display: flex; flex-wrap: wrap; gap: 6px; margin: var(--sp-2) 0; }
 .rate-row .filter { min-height: 36px; padding: 4px 10px; font-variant-numeric: tabular-nums; }
 /* 講次頁控制列：一行放完（播放｜速度｜跟隨｜收起影片） */
-.lesson-ctl { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); margin: var(--sp-2) 0 0; }
-.lesson-ctl .btn { min-height: 38px; padding: 4px 12px; }
+.lesson-ctl { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin: var(--sp-2) 0 0; }
+.lesson-ctl .btn { min-height: 38px; padding: 4px 8px; white-space: nowrap; }
+.lesson-ctl .btn.primary { gap: 6px; font-variant-numeric: tabular-nums; }
 .lesson-ctl .btn .i { width: 18px; height: 18px; }
-.rate-sel { min-height: 38px; padding: 4px 8px; font: inherit; font-size: 16px; font-variant-numeric: tabular-nums; color: var(--fg); background: var(--card); border: 1px solid var(--field-line); border-radius: var(--r-btn); }
-.lesson-ctl label.check.follow { min-height: 38px; gap: 6px; font-size: var(--fs-chip); }
+.rate-sel { min-height: 38px; padding: 4px 4px; font: inherit; font-size: 16px; font-variant-numeric: tabular-nums; color: var(--fg); background: var(--card); border: 1px solid var(--field-line); border-radius: var(--r-btn); }
+.lesson-ctl label.check.follow { min-height: 38px; gap: 4px; padding: 0 2px; font-size: var(--fs-chip); }
 .lesson-ctl .fold { margin-left: auto; }
 .video-off .lesson-slot video { display: none; }
 .lesson-media > .status:empty { display: none; }
 /* 離線音檔 */
 .off-btn.on { color: var(--ink-moss); font-weight: var(--fw-strong); }
-.lesson-ctl .off-btn { padding: 4px 8px; }
+.lesson-ctl .off-btn { padding: 4px 6px; margin-left: auto; font-variant-numeric: tabular-nums; }
+.lesson-ctl .fold:not([hidden]) + .off-btn { margin-left: 0; }
 .off-course { align-items: center; margin: var(--sp-2) 0 0; }
 .off-count { font-size: var(--fs-chip); }
 .off-list li.choice a { color: var(--fg); text-decoration: none; display: flex; flex-direction: column; min-width: 0; flex: 1; }

@@ -240,7 +240,7 @@ async function viewPracticeItem(id, qs) {
       if (el) el.play().catch(() => {});
     } catch (e) { status.textContent = e.status === 404 ? '雲端硬碟上找不到這支影片（可能被移除或改了權限）。' : e.status === 401 ? 'Google 登入已過期，請重新登入。' : '讀取失敗：' + e.message; }
   };
-  const playBtn = h('button', { type: 'button', class: 'btn primary', onclick: start }, svgIcon('play'), prog && prog.t_s > 5 && (!prog.duration_s || prog.t_s < prog.duration_s * 0.95) ? `從 ${clock(prog.t_s)} 繼續` : '播放');
+  const playBtn = h('button', { type: 'button', class: 'btn primary', onclick: start }, svgIcon('play'), prog && prog.t_s > 5 && (!prog.duration_s || prog.t_s < prog.duration_s * 0.95) ? `從 ${clockShort(prog.t_s)}` : '播放');
   const matBtn = h('button', { type: 'button', class: 'btn', onclick: () => matMode(true) }, '墊旁模式');
   const nav = list ? h('div', { class: 'doc-nav' },
     k > 0 ? h('a', { class: 'btn', href: `#/practice/item/${encodeURIComponent(list.rows[k - 1].id)}?list=${list.n}&k=${k - 1}` }, svgIcon('back'), '上一支') : h('span'),

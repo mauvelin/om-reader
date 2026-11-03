@@ -221,7 +221,8 @@ async function offSweep() {
 }
 
 /* ── 介面：一顆按鈕（講次頁、練習頁），整門課下載（課程頁），設定頁一節 ── */
-// 狀態：沒下載 →「下載離線」；下載中 →「下載中 45%」（點了暫停）；暫停 →「繼續下載 45%」；完成 →「已離線」（點了問要不要刪）
+// 狀態（字要短，講次頁控制列只有一行；本人 2026-11-04）：沒下載 →「下載」；下載中 →「下載 45%」（點了暫停）；
+// 暫停 →「繼續 45%」；排隊 →「排隊中」；完成 →「✓ 已下載」（點了問要不要刪）
 function offButton(spec, onChange) {
   const btn = h('button', { type: 'button', class: 'btn quiet off-btn', title: '下載到這支手機，沒網路也能看、能聽' });
   const paint = async () => {
@@ -229,7 +230,7 @@ function offButton(spec, onChange) {
     btn.dataset.painted = '1';
     const e = await offGet(spec.key);
     btn.classList.toggle('on', !!(e && e.state === 'done'));
-    btn.textContent = !e ? '下載離線' : e.state === 'done' ? '✓ 已離線' : e.state === 'paused' ? `繼續下載 ${offPct(e)}%` : e.state === 'queued' ? '等待下載…' : `下載中 ${offPct(e)}%`;
+    btn.textContent = !e ? '下載' : e.state === 'done' ? '✓ 已下載' : e.state === 'paused' ? `繼續 ${offPct(e)}%` : e.state === 'queued' ? '排隊中' : `下載 ${offPct(e)}%`;
     btn.title = e && e.err ? e.err : e && e.state === 'done' ? `已存在這支手機（${fmtSize(e.size)}）；點一下可刪除` : '下載到這支手機，沒網路也能看、能聽';
     if (onChange) onChange(e);
   };
@@ -295,7 +296,7 @@ async function offSection() {
     const resume = e.state === 'paused' ? h('button', { type: 'button', class: 'btn', onclick: async () => { if (!gHasToken()) { out.textContent = '要先登入 Google 才能下載。'; return; } await offEnqueue({ key }); route(); } }, '繼續下載') : null;
     const href = e.kind === 'practice' ? '#/practice/item/' + encodeURIComponent(e.ref) : '#/lesson/' + encodeURIComponent(e.ref);
     return h('li', { class: 'choice' }, h('a', { href }, h('span', { class: 't' }, e.title), h('span', { class: 'm' }, `${e.kind === 'practice' ? '練習' : '講次'}・${offIsVideo(e) ? '影片' : '聲音'}・${state}`)), h('div', { class: 'row' }, resume, del));
-  }) : [h('li', { class: 'empty' }, '還沒有下載任何影音。在講次頁、練習頁按「下載離線」，或在課程頁下載整門課。')]);
+  }) : [h('li', { class: 'empty' }, '還沒有下載任何影音。在講次頁、練習頁按「下載」，或在課程頁下載整門課。')]);
   const clear = rows.length ? h('button', { type: 'button', class: 'btn quiet danger', onclick: async () => {
     if (!confirm(`刪除這支手機上全部 ${rows.length} 個離線影音（${fmtSize(total)}）？`)) return;
     for (const [key] of rows) await offRemove(key);

@@ -71,6 +71,8 @@ function learnHtml(html) {
   return wrap;
 }
 const vp = (rel) => (rel ? 'vault/' + rel : null);
+// 短格式：不到一小時只寫分:秒（35:22），超過寫 1:05:22（播放鈕用，控制列才放得下一行）
+const clockShort = (x) => { x = Math.max(0, Math.floor(x || 0)); const hh = Math.floor(x / 3600); const mm = String(Math.floor(x / 60) % 60).padStart(2, '0'); const ss = String(x % 60).padStart(2, '0'); return hh ? `${hh}:${mm}:${ss}` : `${mm}:${ss}`; };
 const clock = (s) => [Math.floor(s / 3600), Math.floor((s % 3600) / 60), Math.floor(s % 60)].map((v) => String(v).padStart(2, '0')).join(':');
 
 async function courseIndex() {
@@ -376,7 +378,7 @@ async function viewLesson(id, qs) {
   // 播放區：播放畫面借進這裡；沒啟用、沒登入時說明怎麼做
   const slot = h('div', { class: 'lesson-slot' });
   const mediaNote = h('div', { class: 'status', role: 'status' });   // div：同名檔的選單也放這裡
-  const playBtn = h('button', { type: 'button', class: 'btn primary' }, svgIcon('play'), prog && !prog.completed && prog.t_s > 5 ? `從 ${clock(prog.t_s)} 繼續` : '播放');
+  const playBtn = h('button', { type: 'button', class: 'btn primary' }, svgIcon('play'), prog && !prog.completed && prog.t_s > 5 ? `從 ${clockShort(prog.t_s)}` : '播放');   // 本人 2026-11-04：拿掉「繼續」，控制列才放得下一行
   // 離線影音（P5）：講次的 mp3／m4a／mp4 可以下載到手機；下載過的優先用手機上的，不用網路、不用登入
   const offSpec = key && offCanMedia(key) ? { key, title: `${c.title}｜${l.order ? l.order + ' ' : ''}${l.lesson_title || l.title}`, kind: 'lesson', ref: l.id, driveName: key } : null;
   const offE = offSpec ? await offDone(key) : null;

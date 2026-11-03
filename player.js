@@ -25,6 +25,7 @@ function dockShow(...kids) {
 }
 function playerClose() {
   if (PLAYER) for (const el of [PLAYER.v, PLAYER.a]) { el.pause(); el.removeAttribute('src'); el.load(); }
+  if (PLAYER && PLAYER.box) PLAYER.box.remove();   // 借進講次頁時，畫面也一起拿掉（不留一個空的影片框）
   PLAYER = null;
   dock.replaceChildren();
   dock.hidden = true;
