@@ -241,6 +241,7 @@ async function recSyncOnce() {
       if (!res) res = await driveCreate(folder, ownName, text);
       seen[ownName] = { id: res.id, md5: res.md5Checksum || '', device, bad: null };
       st.sig = sig;
+      st.wroteAt = Date.now();
       wrote = true;
       RSYNC.lastPush = Date.now();
     }
@@ -249,7 +250,7 @@ async function recSyncOnce() {
     await recSaveState(st);
     RSYNC.lastRead = Date.now();
     const devices = Object.values(seen).filter((x) => x.device && x.device !== device).map((x) => x.device).sort();
-    RSYNC.last = { ok: true, at: st.at, devices, skipped, changed, wrote, device };
+    RSYNC.last = { ok: true, at: st.at, devices, skipped, changed, wrote, device, wroteAt: st.wroteAt || 0 };
     if (changed && (location.hash === '' || location.hash === '#/') && KEY && typeof viewHome === 'function') viewHome().catch(() => {});
     return RSYNC.last;
   } catch (e) {
@@ -295,9 +296,12 @@ async function recSection() {
     if (r.skip) { out.textContent = r.skip + '。'; return; }
     if (!r.ok) { out.textContent = r.msg; return; }
     const t = new Date(r.at).toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' });
-    const parts = [`${t} 同步完成`, r.devices.length ? `讀到 ${r.devices.join('、')} 的紀錄` : '資料夾裡還沒有其他裝置的紀錄',
-      r.changed ? `更新了這支手機 ${r.changed} 筆` : '這支手機沒有要更新的', r.wrote ? `已寫入 ${r.device}.json` : `${r.device}.json 已是最新`];
-    out.textContent = parts.join('，') + '。';
+    // 本人 2026-11-03：「這支手機沒有要更新的」被讀成「手機的變動沒被偵測到」——改成分開講兩個方向
+    const hhmm = (x) => new Date(x).toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' });
+    const parts = [`${t} 同步完成`,
+      r.devices.length ? (r.changed ? `從 ${r.devices.join('、')} 併進 ${r.changed} 筆新紀錄` : `${r.devices.join('、')} 沒有新的紀錄要併進來`) : '資料夾裡還沒有其他裝置的紀錄',
+      r.wrote ? `這支手機的紀錄已寫入 ${r.device}.json` : `這支手機的變動${r.wroteAt ? `在 ${hhmm(r.wroteAt)} ` : ''}就已自動寫入 ${r.device}.json，沒有新的要寫`];
+    out.textContent = parts.join('；') + '。電腦上的 learn 每 5 分鐘讀一次，之後重新整理 learn 的頁面就看得到。';
     if (r.skipped.length) out.append(h('br'), '略過：' + r.skipped.map(([n, why]) => `${n}（${why}）`).join('；'));
   };
   show(RSYNC.last);

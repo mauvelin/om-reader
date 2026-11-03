@@ -356,6 +356,15 @@ label.check input { width: 20px; height: 20px; accent-color: var(--accent); }
 .lesson-slot:empty { display: none; }
 .rate-row { display: flex; flex-wrap: wrap; gap: 6px; margin: var(--sp-2) 0; }
 .rate-row .filter { min-height: 36px; padding: 4px 10px; font-variant-numeric: tabular-nums; }
+/* 講次頁控制列：一行放完（播放｜速度｜跟隨｜收起影片） */
+.lesson-ctl { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); margin: var(--sp-2) 0 0; }
+.lesson-ctl .btn { min-height: 38px; padding: 4px 12px; }
+.lesson-ctl .btn .i { width: 18px; height: 18px; }
+.rate-sel { min-height: 38px; padding: 4px 8px; font: inherit; font-size: 16px; font-variant-numeric: tabular-nums; color: var(--fg); background: var(--card); border: 1px solid var(--field-line); border-radius: var(--r-btn); }
+.lesson-ctl label.check.follow { min-height: 38px; gap: 6px; font-size: var(--fs-chip); }
+.lesson-ctl .fold { margin-left: auto; }
+.video-off .lesson-slot video { display: none; }
+.lesson-media > .status:empty { display: none; }
 /* learn 的逐字稿：每段一個時間鈕＋文字；播放到的那段淡石底 */
 .md.learn .seg, .md.learn .seg-cont { margin: 0 0 .7em; padding: 4px 8px; scroll-margin-top: 45vh; }
 .md.learn .seg.gap { color: var(--muted); }
@@ -402,6 +411,19 @@ label.check input { width: 20px; height: 20px; accent-color: var(--accent); }
 .pdf-pages { display: flex; flex-direction: column; gap: var(--sp-2); margin: var(--sp-2) 0; }
 .pdf-page { display: block; width: 100%; height: auto; background: #fff; box-shadow: var(--shadow-card); }
 .pdf-count { margin: var(--sp-2) 0 0; }
+/* iPhone 與直立 iPad：播放區釘在頂列下方、頁籤列黏在播放區下方，逐字稿在底下捲動（高度由講次頁量好放進變數） */
+@media (max-width: 899px) {
+  .lesson-layout.has-player .lesson-left { position: sticky; top: var(--bar-h, 62px); z-index: 5; background: var(--bg); padding-bottom: var(--sp-1); }
+  .lesson-layout.has-player .lesson-media { margin: 0; }
+  .lesson-layout.has-player .lesson-slot { position: static; }
+  .lesson-layout.has-player .lesson-slot .dock-media video { max-height: 30vh; }
+  .lesson-layout.has-player .ticks { margin-bottom: 0; }
+  .lesson-layout.has-player .lesson-right > .seg-tabs { position: sticky; top: calc(var(--bar-h, 62px) + var(--left-h, 0px)); z-index: 4; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none;
+    margin: 0 0 var(--sp-3); padding: 4px 0; background: var(--bg); border-bottom: 1px solid var(--line); }
+  .lesson-layout.has-player .lesson-right > .seg-tabs::-webkit-scrollbar { display: none; }
+  .lesson-layout.has-player .lesson-right > .seg-tabs .filter { flex: none; min-height: 36px; padding: 2px 12px; }
+  .lesson-layout.has-player .lesson-ctl { margin-top: var(--sp-1); }
+}
 @media (min-width: 900px) {
   body.wide-page main { max-width: 1240px; }
   .lesson-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--sp-5); align-items: start; }
@@ -429,7 +451,9 @@ li.choice .row { margin: 0; }
 .hc-tools { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); margin: var(--sp-2) 0 var(--sp-3); }
 .hc-tabs { margin: 0; }
 .hc-badge { margin-left: 6px; font-size: .78em; color: var(--muted); }
-.hc-other { min-height: 40px; padding: 4px 8px; font: inherit; font-size: 16px; color: var(--fg); background: var(--card); border: 1px solid var(--field-line); border-radius: var(--r-btn); }
+.hc-tools > * { min-width: 0; max-width: 100%; }
+.hc-tabs .filter { max-width: 100%; white-space: normal; text-align: left; }
+.hc-other { max-width: 100%; min-width: 0; min-height: 40px; padding: 4px 8px; font: inherit; font-size: 16px; color: var(--fg); background: var(--card); border: 1px solid var(--field-line); border-radius: var(--r-btn); }
 
 /* ── P3 練習層 ── */
 /* 練習風格＝草木染六色的彩虹序（learn 2026-10-21）：Conditioning 茜草紅、Vinyasa 柿橙、Meditation 杏黃、Hatha 苔蘚綠、

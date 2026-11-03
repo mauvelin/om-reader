@@ -374,9 +374,10 @@ async function viewLesson(id, qs) {
   const playBtn = h('button', { type: 'button', class: 'btn primary' }, svgIcon('play'), prog && !prog.completed && prog.t_s > 5 ? `從 ${clock(prog.t_s)} 繼續` : '播放');
   const startAt = (t) => openLessonMedia(l, meta, t, isAudio, mediaNote);
   playBtn.addEventListener('click', () => startAt(startT || (prog && !prog.completed ? prog.t_s : 0)));
-  const rateRow = h('div', { class: 'rate-row', role: 'group', 'aria-label': '播放速度' },
-    RATES.map((r) => h('button', { type: 'button', class: 'filter', 'aria-pressed': String(r === playerRate()), 'data-rate': r,
-      onclick: (e) => { playerSetRate(r); rateRow.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b === e.currentTarget))); } }, r + '×')));
+  // 控制列只佔一行（本人 2026-11-03：播放與倍速鈕太佔版面）：播放｜速度下拉｜跟隨｜收起影片
+  const rateSel = h('select', { class: 'rate-sel', 'aria-label': '播放速度' }, RATES.map((r) => h('option', { value: r }, r + '×')));
+  rateSel.value = playerRate();
+  rateSel.addEventListener('change', () => playerSetRate(rateSel.value));
   const followBox = h('input', { type: 'checkbox', id: 'follow' });
   followBox.checked = (() => { try { return localStorage.getItem('om-follow') !== '0'; } catch (e) { return true; } })();
   followBox.addEventListener('change', () => { try { localStorage.setItem('om-follow', followBox.checked ? '1' : '0'); } catch (e) { /* 略過 */ } });
@@ -384,7 +385,17 @@ async function viewLesson(id, qs) {
   const media = h('section', { class: 'lesson-media' }, slot, mediaNote);
   if (!key) mediaNote.textContent = '這一講沒有影音檔。';
   else if (!s.enabled) mediaNote.append('影音在雲端硬碟。到「同步」頁啟用「雲端硬碟影音」後，就能在這裡播放。');
-  else media.append(h('div', { class: 'row' }, mine() ? null : playBtn), rateRow, h('label', { class: 'check', for: 'follow' }, followBox, '逐字稿跟隨播放'));
+  // 收起影片：只藏畫面，聲音照播、控制列留著（learn 的做法；每一講開始都是展開的）
+  const fold = h('button', { type: 'button', class: 'btn quiet fold', 'aria-pressed': 'false', hidden: true, title: '收起影片畫面，只聽聲音、逐字稿變高' }, '收起影片');
+  fold.addEventListener('click', () => {
+    const off = media.classList.toggle('video-off');
+    fold.textContent = off ? '展開影片' : '收起影片';
+    fold.setAttribute('aria-pressed', String(off));
+  });
+  playBtn.hidden = mine();
+  const playable = !!key && s.enabled;
+  if (playable) media.append(h('div', { class: 'lesson-ctl' }, playBtn, rateSel,
+    h('label', { class: 'check follow', for: 'follow', title: '逐字稿跟隨播放' }, followBox, '跟隨'), fold));
 
   // 分頁：逐字稿｜摘要｜講義｜我的筆記
   const text = l.transcript ? await textOf(l.transcript.md) : null;
@@ -475,7 +486,7 @@ async function viewLesson(id, qs) {
       trim(x.handout_title || x.title), sharedIds.has(x.id) ? h('span', { class: 'hc-badge' }, '全課') : null)));
     let other = null;
     if (otherHandouts.length) {
-      other = h('select', { class: 'hc-other', 'aria-label': '其他講次的講義' }, h('option', { value: '' }, '其他講次 ▾'));
+      other = h('select', { class: 'hc-other', 'aria-label': '其他講次的講義' }, h('option', { value: '' }, '其他講次的講義'));
       const groups = new Map();
       for (const { x, lesson } of otherHandouts) { const g = lesson ? `${lesson.order ? lesson.order + '　' : ''}${lesson.lesson_title || lesson.title}` : '其他'; if (!groups.has(g)) groups.set(g, []); groups.get(g).push(x); }
       for (const [g, xs] of groups) other.append(h('optgroup', { label: g }, xs.map((x) => h('option', { value: x.id }, x.handout_title || x.title))));
@@ -604,9 +615,29 @@ async function viewLesson(id, qs) {
   const head = areaColor(h('div', { class: 'doc-head' }, h('nav', { class: 'crumb' }, h('a', { href: '#/course/' + encodeURIComponent(c.id) }, c.title)),
     h('h1', null, l.lesson_title || l.title)), null, c.category);
   // iPad 等寬螢幕：左欄播放（固定不捲走）、右欄逐字稿與其他分頁；iPhone 照常單欄（CSS 決定）
-  setView(head, h('p', { class: 'page-sub' }, [l.order, l.series, l.date].filter(Boolean).join('・')),
-    h('div', { class: 'lesson-layout' }, h('div', { class: 'lesson-left' }, media), h('div', { class: 'lesson-right' }, tabBar(tabs, cur, show), pane)),
-    back, toc, nav);
+  // iPhone：播放區（影片、控制列、重點刻度）釘在頂列下方，頁籤列黏在播放區下方，逐字稿在底下捲動（learn 手機版的做法）
+  const left = h('div', { class: 'lesson-left' }, media);
+  const tabsEl = tabBar(tabs, cur, show);
+  const layout = h('div', { class: 'lesson-layout' + (playable ? ' has-player' : '') }, left, h('div', { class: 'lesson-right' }, tabsEl, pane));
+  setView(head, h('p', { class: 'page-sub' }, [l.order, l.series, l.date].filter(Boolean).join('・')), layout, back, toc, nav);
+  const topBar = document.querySelector('.bar');
+  const measure = () => {
+    layout.style.setProperty('--bar-h', `${Math.round(topBar ? topBar.getBoundingClientRect().height : 0)}px`);
+    layout.style.setProperty('--left-h', `${Math.round(left.getBoundingClientRect().height)}px`);
+  };
+  if ('ResizeObserver' in window) {
+    const ro = new ResizeObserver(measure);
+    ro.observe(left); if (topBar) ro.observe(topBar);
+    sig.addEventListener('abort', () => ro.disconnect());
+  }
+  measure();
+  // 看得到逐字稿的範圍：頂列（或黏住的頁籤列）下緣 → 底部分頁列上緣
+  const visTop = () => Math.max(topBar ? topBar.getBoundingClientRect().bottom : 0, tabsEl.getBoundingClientRect().bottom);
+  const visBottom = () => { const t = document.querySelector('.tabs'); return t ? t.getBoundingClientRect().top : window.innerHeight; };
+  const scrollToSeg = (n, smooth) => {
+    const r = n.getBoundingClientRect(), top = visTop(), bot = visBottom();
+    window.scrollTo({ top: Math.max(0, window.scrollY + r.top - top - Math.max(0, (bot - top - r.height) / 3)), behavior: smooth ? 'smooth' : 'auto' });
+  };
   document.body.classList.add('wide-page');
   sig.addEventListener('abort', () => document.body.classList.remove('wide-page'));
   await show(cur);
@@ -614,7 +645,7 @@ async function viewLesson(id, qs) {
     const segs = [...pane.querySelectorAll('.seg[data-t]')];
     let target = null;
     for (const n of segs) { if (Number(n.dataset.t) <= startT) target = n; else break; }
-    if (target) { target.classList.add('flash'); requestAnimationFrame(() => target.scrollIntoView({ block: 'center' })); }
+    if (target) { target.classList.add('flash'); requestAnimationFrame(() => scrollToSeg(target)); }
   }
 
   // 播放畫面：這一講的播放器已經在跑（例如從底部小播放器點回來）就借進來；之後才開的，開好會自己借進來
@@ -635,11 +666,14 @@ async function viewLesson(id, qs) {
   }
   // 逐字稿跟著播放高亮；手動捲動後 8 秒不搶回；目前那段不在畫面上時出現「回到 hh:mm:ss」
   let userScrollUntil = 0, active = null;
-  const markManual = () => { userScrollUntil = performance.now() + 8000; };
+  // 點播放區與頁籤列（收起影片、換速度、切頁籤）不算手動捲動，跟隨不暫停
+  const markManual = (e) => { if (e && e.target && e.target.closest && e.target.closest('.lesson-left, .seg-tabs, .bar')) return; userScrollUntil = performance.now() + 8000; };
   window.addEventListener('touchstart', markManual, { passive: true, signal: sig });
   window.addEventListener('wheel', markManual, { passive: true, signal: sig });
-  back.addEventListener('click', () => { userScrollUntil = 0; const n = pane.querySelector('.seg.active'); if (n) n.scrollIntoView({ block: 'center', behavior: 'smooth' }); back.hidden = true; });
+  back.addEventListener('click', () => { userScrollUntil = 0; const n = pane.querySelector('.seg.active'); if (n) scrollToSeg(n, true); back.hidden = true; });
   const tick = setInterval(() => {
+    playBtn.hidden = mine();
+    fold.hidden = !mine() || isAudio;
     if (!mine()) { back.hidden = true; return; }
     const el = playerEl();
     if (Number.isFinite(el.duration)) drawTicks(el.duration);
@@ -650,7 +684,7 @@ async function viewLesson(id, qs) {
     for (const n of segs) { if (Number(n.dataset.t) <= now) found = n; else break; }
     if (found !== active) {
       pane.querySelectorAll('.active').forEach((n) => n.classList.remove('active'));
-      if (found) { found.classList.add('active'); if (followBox.checked && performance.now() >= userScrollUntil && !el.paused) found.scrollIntoView({ block: 'center', behavior: 'smooth' }); }
+      if (found) { found.classList.add('active'); if (followBox.checked && performance.now() >= userScrollUntil && !el.paused) scrollToSeg(found, true); }
       active = found;
     }
     const items = [...pane.querySelectorAll('.summary-items li[data-t]')];
@@ -659,7 +693,7 @@ async function viewLesson(id, qs) {
     items.forEach((it) => it.classList.toggle('active', it === fi));
     if (active && !el.paused) {
       const box = active.getBoundingClientRect();
-      const off = box.bottom < 0 || box.top > window.innerHeight;
+      const off = box.bottom < visTop() || box.top > visBottom();
       back.hidden = !off;
       if (off) back.textContent = `回到 ${clock(Number(active.dataset.t))}`;
     } else back.hidden = true;
