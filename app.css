@@ -420,3 +420,7 @@ label.check input { width: 20px; height: 20px; accent-color: var(--accent); }
 .concept-refs h3 a { color: var(--fg); text-decoration-color: var(--link-line); }
 li.choice { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--sp-2); padding: var(--sp-2) var(--sp-3); }
 li.choice .row { margin: 0; }
+
+/* 講義「原檔／文字版」切換 */
+.hv-bar { margin: var(--sp-2) 0; }
+.hv-bar .filter { min-height: 36px; padding: 4px 12px; }

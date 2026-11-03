@@ -406,16 +406,50 @@ async function viewLesson(id, qs) {
     if (summary.note) box.append(h('p', { class: 'muted' }, 'AI 摘要：' + summary.note));
     return box;
   };
+  // 講義：有原檔 PDF 的兩份都在，工具列「原檔／文字版」切換（learn 4158fda 的做法：預設原檔；選擇所有講義共用、
+  // 換頁也記得）。沒有 PDF 的只有文字版、不出切換鈕；原檔不是 PDF（txt／docx）時文字版為主、給「開啟原檔」。
+  // 原檔要從雲端硬碟讀：沒啟用或沒登入時照樣顯示文字版，並說明原因
   panes.handouts = async () => {
     const box = h('div');
     for (const x of handouts) {
       const t = await textOf(x.md);
       const d = CAT.byPath.get(vp(x.md));
+      const isPdf = !!x.pdf_key && /\.pdf$/i.test(x.pdf_key);
       const row = h('div', { class: 'row' }, d ? h('a', { class: 'btn quiet', href: pageHref(d.p) }, '單獨開啟') : null);
-      const pdfBox = h('div', { class: 'pdf-view' });
-      if (x.pdf_key && s.enabled) row.append(h('button', { type: 'button', class: 'btn', onclick: (e) => openDrivePdf(x.pdf_key, row, pdfBox, e.currentTarget) }, '原檔 PDF'));
-      box.append(h('section', { class: 'handout' }, h('h3', null, x.handout_title || x.title), row, pdfBox,
-        t ? learnHtml(asHtml(LearnText.renderMarkdown(t, x.body_start_line || 1))) : h('p', { class: 'muted' }, '講義文字還沒同步。')));
+      const pdfBox = h('div', { class: 'pdf-view hv-pdf' });
+      const textBox = h('div', { class: 'hv-text' }, t ? learnHtml(asHtml(LearnText.renderMarkdown(t, x.body_start_line || 1))) : h('p', { class: 'muted' }, '講義文字還沒同步。'));
+      const sec = h('section', { class: 'handout' }, h('h3', null, x.handout_title || x.title));
+      if (isPdf) {
+        const bar = h('div', { class: 'seg-tabs hv-bar', role: 'group', 'aria-label': '原檔或文字版' });
+        let loaded = false, failed = false;   // 原檔讀不到：文字版照樣顯示（learn：PDF 未就位就顯示文字版）
+        const apply = (v) => {
+          bar.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.hv === v)));
+          const can = s.enabled && gHasToken();
+          const wantPdf = v === 'pdf' && can;
+          pdfBox.hidden = !wantPdf;
+          textBox.hidden = wantPdf;
+          note.textContent = v === 'pdf' && !can ? (s.enabled ? '原檔在雲端硬碟，要登入 Google 才讀得到；先顯示文字版。' : '原檔在雲端硬碟，啟用「雲端硬碟影音」並登入後才讀得到；先顯示文字版。') : '';
+          if (wantPdf && !loaded) { loaded = true; openDrivePdf(x.pdf_key, row, pdfBox, null).then((ok) => { if (!ok) { failed = true; textBox.hidden = false; } }); }
+          if (wantPdf && failed) textBox.hidden = false;
+        };
+        const note = h('p', { class: 'muted' });
+        for (const [v, label, title] of [['pdf', '原檔', '同學或課程提供的原始 PDF'], ['text', '文字版', '整理過的文字版（含更正）']]) {
+          bar.append(h('button', { type: 'button', class: 'filter', 'data-hv': v, title, onclick: () => {
+            try { localStorage.setItem('om-handout-view', v); } catch (e) { /* 略過 */ }
+            box.querySelectorAll('.handout').forEach((x2) => x2.dispatchEvent(new CustomEvent('hv', { detail: v })));
+          } }, label));
+        }
+        sec.addEventListener('hv', (e) => apply(e.detail));
+        sec.append(bar, row, note, pdfBox, textBox);
+        apply(handoutView());
+      } else {
+        if (x.pdf_key && s.enabled) row.append(h('button', { type: 'button', class: 'btn', onclick: async () => {
+          const f = await driveFind(x.pdf_key, { validate: true }).catch(() => null);
+          if (f && f.id) window.open(driveViewUrl(f.id), '_blank', 'noopener');
+        } }, svgIcon('external'), '開啟原檔'));
+        sec.append(row, textBox);
+      }
+      box.append(sec);
     }
     return box;
   };
@@ -721,20 +755,22 @@ async function openLessonMedia(l, meta, t, isAudio, note) {
     await go(found);
   } catch (e) { note.textContent = e.status === 401 ? 'Google 登入已過期，請重新登入。' : '找檔失敗：' + e.message; }
 }
+const handoutView = () => { try { return localStorage.getItem('om-handout-view') || 'pdf'; } catch (e) { return 'pdf'; } };
 // 講義原檔：從雲端硬碟讀進來，用 pdf.js 直接顯示在講義裡（iPhone 頁面內嵌只顯示第一頁）；另給「開新視窗」
-async function openDrivePdf(name, row, box, btn) {
+async function openDrivePdf(name, row, box, btn) {   // 回傳 true＝原檔顯示出來了
   if (btn) btn.disabled = true;
   box.replaceChildren(h('p', { class: 'muted' }, '從雲端硬碟讀取…'));
   try {
-    let f = await driveFind(name, { validate: true });
-    if (!f) { box.replaceChildren(h('p', { class: 'muted' }, '雲端硬碟上找不到這份 PDF。')); return; }
-    if (f.choices) { driveChooser(f, box, () => openDrivePdf(name, row, box, btn)); return; }
+    const f = await driveFind(name, { validate: true });
+    if (!f) { box.replaceChildren(h('p', { class: 'muted' }, '雲端硬碟上找不到這份 PDF，下面是文字版。')); return false; }
+    if (f.choices) { return new Promise((res) => driveChooser(f, box, () => openDrivePdf(name, row, box, btn).then(res))); }
     const blob = new Blob([await (await driveRead(f.id)).blob()], { type: 'application/pdf' });
     const url = URL.createObjectURL(blob);
     blobUrls.push(url);
     row.append(h('a', { class: 'btn quiet', href: url, target: '_blank', rel: 'noopener' }, '開新視窗'));
     await pdfInto(box, blob);
-  } catch (e) { box.replaceChildren(h('p', { class: 'note' }, (e.status === 401 ? 'Google 登入已過期，請重新登入。' : '讀取失敗：' + e.message))); }
+    return true;
+  } catch (e) { box.replaceChildren(h('p', { class: 'note' }, (e.status === 401 ? 'Google 登入已過期，請重新登入；' : '原檔讀取失敗（' + e.message + '）；') + '下面是文字版。')); return false; }
 }
 // wiki 概念頁：列出課程裡引用這一頁的地方（learn 匯出的 by_page），點了開那一講那一秒
 async function conceptLessonRefs(d) {
