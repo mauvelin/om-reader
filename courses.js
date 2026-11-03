@@ -277,7 +277,11 @@ async function viewCourseById(id, qs) {
   };
   let cur = qsTab(qs, 'lessons');
   if (!tabs.some((t) => t[0] === cur)) cur = 'lessons';
-  setView(head, h('div', { class: 'chips' }, c.category ? areaChip(c.category) : null), sub, tabBar(tabs, cur, show), pane);
+  // 有 mp3／m4a 講次的課：整門課一起下載離線（啟用雲端硬碟功能才出現）
+  const offSpecs = c.lessons.filter((l) => l.media && l.media.key && offCanAudio(l.media.key))
+    .map((l) => ({ key: l.media.key, title: `${c.title}｜${l.order ? l.order + ' ' : ''}${l.lesson_title || l.title}`, kind: 'lesson', ref: l.id, driveName: l.media.key }));
+  const offRow = offSpecs.length && (await gSettings()).enabled ? offCourseRow(offSpecs) : null;
+  setView(head, h('div', { class: 'chips' }, c.category ? areaChip(c.category) : null), sub, offRow, tabBar(tabs, cur, show), pane);
   show(cur);
 }
 // 講次：多梯次依系列分組；章（NN.NN 的 NN）一列標題，帶該章講義；每講列尾 ✓ 或看到幾成
@@ -372,7 +376,16 @@ async function viewLesson(id, qs) {
   const slot = h('div', { class: 'lesson-slot' });
   const mediaNote = h('div', { class: 'status', role: 'status' });   // div：同名檔的選單也放這裡
   const playBtn = h('button', { type: 'button', class: 'btn primary' }, svgIcon('play'), prog && !prog.completed && prog.t_s > 5 ? `從 ${clock(prog.t_s)} 繼續` : '播放');
-  const startAt = (t) => openLessonMedia(l, meta, t, isAudio, mediaNote);
+  // 離線音檔（P5）：mp3／m4a 的講次可以下載到手機；下載過的優先用手機上的，不用網路、不用登入
+  const offSpec = key && offCanAudio(key) ? { key, title: `${c.title}｜${l.order ? l.order + ' ' : ''}${l.lesson_title || l.title}`, kind: 'lesson', ref: l.id, driveName: key } : null;
+  const offE = offSpec ? await offDone(key) : null;
+  const startAt = async (t) => {
+    const e = offSpec && await offDone(key);
+    if (!e) return openLessonMedia(l, meta, t, isAudio, mediaNote);
+    mediaNote.textContent = '';
+    try { await playerOpen(offFile(e), { t, mode: 'audio', meta }); const el = playerEl(); if (el) el.play().catch(() => {}); }
+    catch (err) { mediaNote.textContent = '離線播放失敗：' + err.message; }
+  };
   playBtn.addEventListener('click', () => startAt(startT || (prog && !prog.completed ? prog.t_s : 0)));
   // 控制列只佔一行（本人 2026-11-03：播放與倍速鈕太佔版面）：播放｜速度下拉｜跟隨｜收起影片
   const rateSel = h('select', { class: 'rate-sel', 'aria-label': '播放速度' }, RATES.map((r) => h('option', { value: r }, r + '×')));
@@ -384,7 +397,7 @@ async function viewLesson(id, qs) {
   const s = await gSettings();
   const media = h('section', { class: 'lesson-media' }, slot, mediaNote);
   if (!key) mediaNote.textContent = '這一講沒有影音檔。';
-  else if (!s.enabled) mediaNote.append('影音在雲端硬碟。到「同步」頁啟用「雲端硬碟影音」後，就能在這裡播放。');
+  else if (!s.enabled && !offE) mediaNote.append('影音在雲端硬碟。到「同步」頁啟用「雲端硬碟影音」後，就能在這裡播放。');
   // 收起影片：只藏畫面，聲音照播、控制列留著（learn 的做法；每一講開始都是展開的）
   const fold = h('button', { type: 'button', class: 'btn quiet fold', 'aria-pressed': 'false', hidden: true, title: '收起影片畫面，只聽聲音、逐字稿變高' }, '收起影片');
   fold.addEventListener('click', () => {
@@ -393,9 +406,9 @@ async function viewLesson(id, qs) {
     fold.setAttribute('aria-pressed', String(off));
   });
   playBtn.hidden = mine();
-  const playable = !!key && s.enabled;
+  const playable = !!key && (s.enabled || !!offE);
   if (playable) media.append(h('div', { class: 'lesson-ctl' }, playBtn, rateSel,
-    h('label', { class: 'check follow', for: 'follow', title: '逐字稿跟隨播放' }, followBox, '跟隨'), fold));
+    h('label', { class: 'check follow', for: 'follow', title: '逐字稿跟隨播放' }, followBox, '跟隨'), fold, offSpec ? offButton(offSpec) : null));
 
   // 分頁：逐字稿｜摘要｜講義｜我的筆記
   const text = l.transcript ? await textOf(l.transcript.md) : null;
@@ -652,12 +665,12 @@ async function viewLesson(id, qs) {
   PLAYER_SLOT = key ? { name: key, el: slot } : null;
   sig.addEventListener('abort', () => { if (PLAYER_SLOT && PLAYER_SLOT.el === slot) PLAYER_SLOT = null; });
   if (mine()) playerAdopt(slot);
-  else if (startT && s.enabled && gHasToken()) startAt(startT);   // 從摘要或深連結帶 ?t= 進來：直接開到那一秒
+  else if (startT && (offE || (s.enabled && gHasToken()))) startAt(startT);   // 從摘要或深連結帶 ?t= 進來：直接開到那一秒
 
   // 點時間戳：這一講正在播就跳過去；還沒開就從那一秒開始
   function wireSeek(root) {
     root.querySelectorAll('[data-seek]').forEach((b) => {
-      b.disabled = !(key && s.enabled);
+      b.disabled = !playable;
       b.addEventListener('click', () => {
         const t = Number(b.dataset.seek);
         if (mine()) { const el = playerEl(); el.currentTime = t; el.play().catch(() => {}); } else startAt(t);

@@ -3,8 +3,8 @@
 // 殼層靜態檔 cache-first；跨網域請求（api.github.com）完全不經手。
 // 殼層檔案有改，CACHE_VERSION 往前推一號。
 // 另外代理同源的 drive-media/<檔案 ID>：帶上記憶體裡的 Google token 與 Range 轉給 Drive API（見檔尾）。
-const CACHE_VERSION = 'om-reader-v24';
-const SHELL = ['./', './index.html', './theme.js', './core.js', './google.js', './drive.js', './player.js', './reader.js', './pdfview.js', './courses.js', './practice.js', './records.js', './app.js', './app.css', './viewer.html', './viewer.js',
+const CACHE_VERSION = 'om-reader-v25';
+const SHELL = ['./', './index.html', './theme.js', './core.js', './google.js', './drive.js', './player.js', './offline.js', './reader.js', './pdfview.js', './courses.js', './practice.js', './records.js', './app.js', './app.css', './viewer.html', './viewer.js',
   './vendor/markdown-it.min.js', './vendor/purify.min.js', './vendor/learn-text.js', './vendor/pdfjs/pdf.min.js', './vendor/pdfjs/pdf.worker.min.js', './manifest.webmanifest',
   './icons/icon-180.png', './icons/icon-192.png', './icons/icon-512.png', './icons/favicon-32.png', './icons/mark.png', './icons/mark-center.png'];
 
@@ -26,6 +26,8 @@ self.addEventListener('fetch', (event) => {
   if (url.pathname.includes('/probe/') || url.pathname.includes('/dev-data/')) return;
   const dm = url.pathname.match(/\/drive-media\/([A-Za-z0-9_-]{10,})$/);
   if (dm) { event.respondWith(driveProxy(req, dm[1])); return; }
+  const om = url.pathname.match(/\/offline-media\/([0-9a-f]{16,64})$/);
+  if (om) { event.respondWith(offlineServe(req, om[1])); return; }
   if (req.mode === 'navigate') {
     const key = url.pathname.endsWith('/viewer.html') ? './viewer.html' : './index.html';
     event.respondWith(networkFirst(event, req, key));
@@ -107,4 +109,68 @@ async function driveProxy(req, id) {
   }
   if (!out.has('accept-ranges')) out.set('accept-ranges', 'bytes');
   return new Response(res.body, { status: res.status, statusText: res.statusText, headers: out });
+}
+
+/* ── 離線音檔（offline.js 下載的）──
+   offline-media/<隨機 ID>：從 IndexedDB 的 media 讀出 Range 涵蓋的幾塊（每塊 1 MiB、各自 AES-GCM 加密），解密後回 206。
+   解密用的是頁面在播放前交過來的「這一個檔」的金鑰（不是開啟鎖的金鑰）；上鎖時只留正在播的那一把。
+   SW 被系統停掉再叫醒時金鑰會不見，就向頁面要一次。 */
+const OFF_FILES = new Map();   // oid → { size, mime, chunk, key }
+let offWaiters = [];
+self.addEventListener('message', (event) => {
+  const m = event.data || {};
+  if (m.type === 'off-file' && m.oid && m.key) {
+    OFF_FILES.set(m.oid, { size: m.size, mime: m.mime, chunk: m.chunk, key: m.key });
+    const w = offWaiters; offWaiters = []; w.forEach((r) => r());
+  } else if (m.type === 'off-lock') {
+    for (const oid of [...OFF_FILES.keys()]) if (oid !== m.keep) OFF_FILES.delete(oid);
+  }
+});
+let offDb = null;
+function offOpenDb() {
+  if (!offDb) offDb = new Promise((resolve, reject) => {
+    const r = indexedDB.open('om-reader');
+    r.onupgradeneeded = () => { r.transaction.abort(); };   // 資料庫不在：不要在這裡建
+    r.onsuccess = () => { r.result.onversionchange = () => { r.result.close(); offDb = null; }; resolve(r.result); };
+    r.onerror = () => { offDb = null; reject(r.error); };
+  });
+  return offDb;
+}
+async function offChunks(oid, from, to) {
+  const d = await offOpenDb();
+  const st = d.transaction('media').objectStore('media');
+  return Promise.all(Array.from({ length: to - from + 1 }, (_, i) => new Promise((res, rej) => {
+    const q = st.get(`${oid}:${String(from + i).padStart(6, '0')}`);
+    q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error);
+  })));
+}
+async function offlineServe(req, oid) {
+  let f = OFF_FILES.get(oid);
+  if (!f) {
+    const p = new Promise((resolve) => { offWaiters.push(resolve); setTimeout(resolve, 4000); });
+    await tellPages({ type: 'off-need-key', oid });
+    await p;
+    f = OFF_FILES.get(oid);
+    if (!f) return new Response('', { status: 403 });
+  }
+  const m = /bytes=(\d*)-(\d*)/.exec(req.headers.get('range') || '');
+  let start = m && m[1] ? Number(m[1]) : 0;
+  let end = m && m[2] ? Number(m[2]) : f.size - 1;
+  if (m && !m[1] && m[2]) { start = Math.max(0, f.size - Number(m[2])); end = f.size - 1; }   // bytes=-N：最後 N bytes
+  if (start >= f.size) return new Response('', { status: 416, headers: { 'content-range': `bytes */${f.size}` } });
+  end = Math.min(end, f.size - 1, start + 4 * f.chunk - 1);   // 一次最多回 4 MiB，播放器會再要下一段
+  const first = Math.floor(start / f.chunk), last = Math.floor(end / f.chunk);
+  let parts;
+  try {
+    const recs = await offChunks(oid, first, last);
+    if (recs.some((x) => !x)) return new Response('', { status: 404 });
+    parts = await Promise.all(recs.map((x) => crypto.subtle.decrypt({ name: 'AES-GCM', iv: x.iv }, f.key, x.ct)));
+  } catch (e) { return new Response('', { status: 500 }); }
+  const all = new Uint8Array(parts.reduce((n, b) => n + b.byteLength, 0));
+  let o = 0;
+  for (const b of parts) { all.set(new Uint8Array(b), o); o += b.byteLength; }
+  const body = all.subarray(start - first * f.chunk, end - first * f.chunk + 1);
+  return new Response(body, { status: 206, headers: {
+    'content-type': f.mime || 'audio/mpeg', 'content-length': String(body.byteLength),
+    'content-range': `bytes ${start}-${end}/${f.size}`, 'accept-ranges': 'bytes', 'cache-control': 'no-store' } });
 }

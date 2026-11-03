@@ -213,7 +213,18 @@ async function viewPracticeItem(id, qs) {
   const paintFav = () => { favBtn.textContent = isFav(item.id) ? '★ 最愛' : '☆ 加入最愛'; favBtn.setAttribute('aria-pressed', String(isFav(item.id))); };
   favBtn.addEventListener('click', () => { toggleFav(item.id); paintFav(); });
   paintFav();
+  // 練習音檔（kind＝audio）可以下載離線；下載過的優先用手機上的
+  const offSpec = item.kind === 'audio' && item.drive_id ? { key: 'practice:' + item.id, title: item.title, kind: 'practice', ref: item.id, driveId: item.drive_id } : null;
+  const offE = offSpec ? await offDone(offSpec.key) : null;
   const start = async () => {
+    const e = offSpec && await offDone(offSpec.key);
+    if (e) {
+      const p0 = LREC.practice_progress[item.id];
+      const t = p0 && p0.duration_s && p0.t_s < p0.duration_s * 0.95 ? p0.t_s : 0;
+      try { await playerOpen(offFile(e), { t, mode: 'audio', meta }); const el = playerEl(); if (el) el.play().catch(() => {}); }
+      catch (err) { status.textContent = '離線播放失敗：' + err.message; }
+      return;
+    }
     if (!s.enabled) { status.textContent = '到「同步」頁啟用「雲端硬碟影音」並登入 Google，就能在這裡播放。'; return; }
     if (!gHasToken() || gMinutesLeft() < RENEW_BEFORE_MIN) return gLogin({ returnHash: location.hash, resume: null }).catch((e) => { status.textContent = e.message; });
     status.textContent = '讀取雲端硬碟…';
@@ -242,14 +253,14 @@ async function viewPracticeItem(id, qs) {
   setView(head, h('p', { class: 'page-sub' }, metaLine),
     h('div', { class: 'chips' }, item.energy ? h('span', { class: 'tag' }, h('span', { class: 'p-energy', 'data-e': item.energy }), item.energy) : null, (item.tags || []).map((x) => h('span', { class: 'tag' }, x))),
     h('section', { class: 'lesson-media' }, slot, status,
-      h('div', { class: 'row' }, mine() ? null : playBtn, item.kind === 'audio' ? null : matBtn, favBtn, doneBtn,
+      h('div', { class: 'row' }, mine() ? null : playBtn, item.kind === 'audio' ? null : matBtn, favBtn, doneBtn, offSpec && (s.enabled || offE) ? offButton(offSpec) : null,
         h('a', { class: 'btn', href: driveViewUrl(item.drive_id), target: '_blank', rel: 'noopener noreferrer' }, svgIcon('external'), '雲端硬碟'))), endNote,
     item.summary ? h('p', null, item.summary) : null,
     (item.notes || []).length ? h('ul', { class: 'p-notes' }, item.notes.map((x) => h('li', null, x))) : null, nav);
   PLAYER_SLOT = { name: item.drive_id, el: slot };
   sig.addEventListener('abort', () => { if (PLAYER_SLOT && PLAYER_SLOT.el === slot) PLAYER_SLOT = null; matMode(false, true); });
   if (mine()) { playerAdopt(slot); PLAYER.meta = meta; }
-  else if (params.get('auto') === '1' && s.enabled && gHasToken()) start();   // 清單接下一支（墊旁模式倒數後）
+  else if (params.get('auto') === '1' && (offE || (s.enabled && gHasToken()))) start();   // 清單接下一支（墊旁模式倒數後）
   // 播完：清單有下一支就提示（墊旁模式時 5 秒後自動接下一支，learn 同一套）
   let countdown = null;
   const tick = setInterval(() => {

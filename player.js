@@ -15,7 +15,8 @@ let PLAYER_SLOT = null;   // 講次頁登記的位置：{ name（雲端硬碟檔
 const RATES = ['0.75', '1', '1.25', '1.5', '1.75', '2'];
 const playerRate = () => { try { return localStorage.getItem('om-rate') || '1'; } catch (e) { return '1'; } };
 const playerEl = () => (PLAYER ? (PLAYER.mode === 'audio' ? PLAYER.a : PLAYER.v) : null);
-const playerSrc = (id) => 'drive-media/' + encodeURIComponent(id);
+// 來源：雲端串流 drive-media/<雲端硬碟 ID>；下載過的離線音檔 offline-media/<隨機 ID>（offline.js）
+const playerSrc = (file) => (file.offline ? 'offline-media/' + encodeURIComponent(file.offline) : 'drive-media/' + encodeURIComponent(file.id));
 
 function dockShow(...kids) {
   dock.replaceChildren(...kids.filter(Boolean));
@@ -34,20 +35,20 @@ function playerClose() {
 // 開一個雲端硬碟檔：file＝{ id, name, size, mime }（size 一定要有：Drive 的回應不公開 Content-Range，SW 要自己補）
 async function playerOpen(file, { t = 0, mode, resumed = false, meta = null } = {}) {
   const s = await gSettings();
-  if (!s.enabled) return;
+  if (!s.enabled && !file.offline) return;   // 離線音檔不需要 Google
   if (PLAYER) playerClose();
-  mode = mode || (/^audio\//.test(file.mime || '') ? 'audio' : 'video');
+  mode = file.offline ? 'audio' : mode || (/^audio\//.test(file.mime || '') ? 'audio' : 'video');
   const head = h('div', { class: 'dock-head' }, h('span', { class: 'dock-title' }, file.name || '雲端硬碟檔案'),
     h('button', { type: 'button', class: 'btn quiet', onclick: playerClose }, '關閉'));
-  if (!gHasToken() || gMinutesLeft() < RENEW_BEFORE_MIN) {   // 開播前先續期，播到一半才不會斷
+  if (!file.offline && (!gHasToken() || gMinutesLeft() < RENEW_BEFORE_MIN)) {   // 開播前先續期，播到一半才不會斷
     const go = h('button', { type: 'button', class: 'btn primary' }, gHasToken() ? '先續期 Google 登入再播' : '登入 Google 再播');
     go.addEventListener('click', () => gLogin({ returnHash: location.hash, resume: { file, t, mode, meta } }).catch((e) => { note.textContent = e.message; }));
     const note = h('p', { class: 'status' }, gHasToken() ? `登入只剩 ${gMinutesLeft()} 分鐘，播到一半會斷。` : 'Google 登入約一小時失效，需要重新登入。');
     dockShow(head, note, h('div', { class: 'row' }, go, h('a', { class: 'btn', href: driveViewUrl(file.id), target: '_blank', rel: 'noopener noreferrer' }, svgIcon('external'), '雲端硬碟')));
     return;
   }
-  G.sizes.set(file.id, file.size);
-  gTellSW();
+  if (file.offline) { const e = Object.values(await offIndex()).find((x) => x.oid === file.offline); if (e) await offArm(e); }
+  else { G.sizes.set(file.id, file.size); gTellSW(); }
   const v = h('video', { controls: true, playsinline: true, preload: 'metadata' });
   const a = h('audio', { controls: true, preload: 'metadata' });
   // lastT：最後一個可靠的播放位置（重新載入時 currentTime 會先歸零）；positioned：拿到長度並套用起始位置之後才記進度
@@ -56,6 +57,7 @@ async function playerOpen(file, { t = 0, mode, resumed = false, meta = null } = 
   const modeBtn = h('button', { type: 'button', class: 'btn' });
   const paintMode = () => {
     modeBtn.textContent = PLAYER.mode === 'audio' ? '改回影片' : '聲音模式（可在背景播）';
+    modeBtn.hidden = !!PLAYER.file.offline;   // 離線音檔只有聲音
     v.hidden = PLAYER.mode === 'audio';
     a.hidden = PLAYER.mode !== 'audio';
   };
@@ -79,7 +81,7 @@ async function playerOpen(file, { t = 0, mode, resumed = false, meta = null } = 
 function playerLoad(el, t) {
   PLAYER.lastT = t;
   PLAYER.positioned = false;
-  el.src = playerSrc(PLAYER.file.id);
+  el.src = playerSrc(PLAYER.file);
   el.addEventListener('loadedmetadata', () => { if (t > 0) el.currentTime = t; if (PLAYER) PLAYER.positioned = true; }, { once: true });
   el.load();
 }

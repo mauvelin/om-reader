@@ -165,6 +165,7 @@ async function viewSettings() {
       h('div', { class: 'row' }, checkBtn), out, choice, prog, quota),
     ...(await googleSection()),
     ...((await gSettings()).enabled ? await recSection() : []),
+    ...(((await gSettings()).enabled || Object.keys(await offIndex()).length) ? await offSection() : []),
     secTitle('這支手機'), h('div', { class: 'card' }, info),
     h('p', { class: 'muted' }, '只下載有變動的檔。repo 名稱與 token 只存在這支手機，token 與所有資料都以 Face ID 導出的金鑰加密。token 到期後在這裡貼上新的即可。'),
     h('div', { class: 'row' }, lockBtn, clearBtn));
