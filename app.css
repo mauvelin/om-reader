@@ -424,3 +424,9 @@ li.choice .row { margin: 0; }
 /* 講義「原檔／文字版」切換 */
 .hv-bar { margin: var(--sp-2) 0; }
 .hv-bar .filter { min-height: 36px; padding: 4px 12px; }
+
+/* 講義頁籤（這一講＋全課共用）與「其他講次」下拉 */
+.hc-tools { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); margin: var(--sp-2) 0 var(--sp-3); }
+.hc-tabs { margin: 0; }
+.hc-badge { margin-left: 6px; font-size: .78em; color: var(--muted); }
+.hc-other { min-height: 40px; padding: 4px 8px; font: inherit; font-size: 16px; color: var(--fg); background: var(--card); border: 1px solid var(--field-line); border-radius: var(--r-btn); }

@@ -385,8 +385,17 @@ async function viewLesson(id, qs) {
   const text = l.transcript ? await textOf(l.transcript.md) : null;
   const summary = text && l.summary ? LearnText.summaryOf(text, l.summary) : null;
   const handouts = (l.handout_ids || []).map((hid) => c.handouts.find((x) => x.id === hid)).filter(Boolean);
+  const attached = new Set(c.lessons.flatMap((y) => y.handout_ids || []));
+  const sharedIds = new Set(c.handouts.filter((x) => !attached.has(x.id)).map((x) => x.id));
+  const mineHandouts = [...handouts, ...c.handouts.filter((x) => sharedIds.has(x.id))];
+  const mineIds = new Set(mineHandouts.map((x) => x.id));
+  const otherHandouts = [];
+  for (const y of c.lessons) for (const hid of y.handout_ids || []) {
+    const x = c.handouts.find((z) => z.id === hid);
+    if (x && !mineIds.has(x.id) && !otherHandouts.some((o) => o.x.id === x.id)) otherHandouts.push({ x, lesson: y });
+  }
   const tabs = [['transcript', '逐字稿'], ['summary', '摘要']];
-  if (handouts.length) tabs.push(['handouts', `講義（${handouts.length}）`]);
+  if (c.handouts.length) tabs.push(['handouts', mineHandouts.length ? `講義（${mineHandouts.length}）` : '講義']);
   if (c.notes.length) tabs.push(['notes', '我的筆記']);
   const ex = await learnExport();
   TERM_PAGES = conceptByTitle(ex);
@@ -409,48 +418,73 @@ async function viewLesson(id, qs) {
   // 講義：有原檔 PDF 的兩份都在，工具列「原檔／文字版」切換（learn 4158fda 的做法：預設原檔；選擇所有講義共用、
   // 換頁也記得）。沒有 PDF 的只有文字版、不出切換鈕；原檔不是 PDF（txt／docx）時文字版為主、給「開啟原檔」。
   // 原檔要從雲端硬碟讀：沒啟用或沒登入時照樣顯示文字版，並說明原因
+  // 講義分頁（learn 71bd5a6）：頁籤＝這一講的講義＋全課共用的（沒有掛在任何一講上的，標「全課」）；
+  // 其他講次的講義收進「其他講次 ▾」下拉，依講次分組，選了才讀。頁籤名稱去掉開頭重複的講名，全名放在 title
+  const handoutSection = async (x) => {
+    const t = await textOf(x.md);
+    const d = CAT.byPath.get(vp(x.md));
+    const isPdf = !!x.pdf_key && /\.pdf$/i.test(x.pdf_key);
+    const row = h('div', { class: 'row' }, d ? h('a', { class: 'btn quiet', href: pageHref(d.p) }, '單獨開啟') : null);
+    const pdfBox = h('div', { class: 'pdf-view hv-pdf' });
+    const textBox = h('div', { class: 'hv-text' }, t ? learnHtml(asHtml(LearnText.renderMarkdown(t, x.body_start_line || 1))) : h('p', { class: 'muted' }, '講義文字還沒同步。'));
+    const sec = h('section', { class: 'handout' }, h('h3', null, x.handout_title || x.title));
+    if (isPdf) {
+      const bar = h('div', { class: 'seg-tabs hv-bar', role: 'group', 'aria-label': '原檔或文字版' });
+      let loaded = false, failed = false;   // 原檔讀不到：文字版照樣顯示（learn：PDF 未就位就顯示文字版）
+      const apply = (v) => {
+        bar.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.hv === v)));
+        const can = s.enabled && gHasToken();
+        const wantPdf = v === 'pdf' && can;
+        pdfBox.hidden = !wantPdf;
+        textBox.hidden = wantPdf;
+        note.textContent = v === 'pdf' && !can ? (s.enabled ? '原檔在雲端硬碟，要登入 Google 才讀得到；先顯示文字版。' : '原檔在雲端硬碟，啟用「雲端硬碟影音」並登入後才讀得到；先顯示文字版。') : '';
+        if (wantPdf && !loaded) { loaded = true; openDrivePdf(x.pdf_key, row, pdfBox, null).then((ok) => { if (!ok) { failed = true; textBox.hidden = false; } }); }
+        if (wantPdf && failed) textBox.hidden = false;
+      };
+      const note = h('p', { class: 'muted' });
+      for (const [v, label, title] of [['pdf', '原檔', '同學或課程提供的原始 PDF'], ['text', '文字版', '整理過的文字版（含更正）']]) {
+        bar.append(h('button', { type: 'button', class: 'filter', 'data-hv': v, title, onclick: () => {
+          try { localStorage.setItem('om-handout-view', v); } catch (e) { /* 略過 */ }
+          apply(v);   // 一次只顯示一份講義；選擇記成偏好，下一份也照這個顯示
+        } }, label));
+      }
+      sec.append(bar, row, note, pdfBox, textBox);
+      apply(handoutView());
+    } else {
+      if (x.pdf_key && s.enabled) row.append(h('button', { type: 'button', class: 'btn', onclick: async () => {
+        const f = await driveFind(x.pdf_key, { validate: true }).catch(() => null);
+        if (f && f.id) window.open(driveViewUrl(f.id), '_blank', 'noopener');
+      } }, svgIcon('external'), '開啟原檔'));
+      sec.append(row, textBox);
+    }
+    return sec;
+  };
   panes.handouts = async () => {
     const box = h('div');
-    for (const x of handouts) {
-      const t = await textOf(x.md);
-      const d = CAT.byPath.get(vp(x.md));
-      const isPdf = !!x.pdf_key && /\.pdf$/i.test(x.pdf_key);
-      const row = h('div', { class: 'row' }, d ? h('a', { class: 'btn quiet', href: pageHref(d.p) }, '單獨開啟') : null);
-      const pdfBox = h('div', { class: 'pdf-view hv-pdf' });
-      const textBox = h('div', { class: 'hv-text' }, t ? learnHtml(asHtml(LearnText.renderMarkdown(t, x.body_start_line || 1))) : h('p', { class: 'muted' }, '講義文字還沒同步。'));
-      const sec = h('section', { class: 'handout' }, h('h3', null, x.handout_title || x.title));
-      if (isPdf) {
-        const bar = h('div', { class: 'seg-tabs hv-bar', role: 'group', 'aria-label': '原檔或文字版' });
-        let loaded = false, failed = false;   // 原檔讀不到：文字版照樣顯示（learn：PDF 未就位就顯示文字版）
-        const apply = (v) => {
-          bar.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.hv === v)));
-          const can = s.enabled && gHasToken();
-          const wantPdf = v === 'pdf' && can;
-          pdfBox.hidden = !wantPdf;
-          textBox.hidden = wantPdf;
-          note.textContent = v === 'pdf' && !can ? (s.enabled ? '原檔在雲端硬碟，要登入 Google 才讀得到；先顯示文字版。' : '原檔在雲端硬碟，啟用「雲端硬碟影音」並登入後才讀得到；先顯示文字版。') : '';
-          if (wantPdf && !loaded) { loaded = true; openDrivePdf(x.pdf_key, row, pdfBox, null).then((ok) => { if (!ok) { failed = true; textBox.hidden = false; } }); }
-          if (wantPdf && failed) textBox.hidden = false;
-        };
-        const note = h('p', { class: 'muted' });
-        for (const [v, label, title] of [['pdf', '原檔', '同學或課程提供的原始 PDF'], ['text', '文字版', '整理過的文字版（含更正）']]) {
-          bar.append(h('button', { type: 'button', class: 'filter', 'data-hv': v, title, onclick: () => {
-            try { localStorage.setItem('om-handout-view', v); } catch (e) { /* 略過 */ }
-            box.querySelectorAll('.handout').forEach((x2) => x2.dispatchEvent(new CustomEvent('hv', { detail: v })));
-          } }, label));
-        }
-        sec.addEventListener('hv', (e) => apply(e.detail));
-        sec.append(bar, row, note, pdfBox, textBox);
-        apply(handoutView());
-      } else {
-        if (x.pdf_key && s.enabled) row.append(h('button', { type: 'button', class: 'btn', onclick: async () => {
-          const f = await driveFind(x.pdf_key, { validate: true }).catch(() => null);
-          if (f && f.id) window.open(driveViewUrl(f.id), '_blank', 'noopener');
-        } }, svgIcon('external'), '開啟原檔'));
-        sec.append(row, textBox);
-      }
-      box.append(sec);
+    const doc = h('div', { class: 'hc-doc' });
+    const show = async (x) => { doc.replaceChildren(h('p', { class: 'muted' }, '載入中…')); doc.replaceChildren(await handoutSection(x)); wireSeek(doc); };
+    const trim = (name) => { const lt = l.lesson_title || ''; const n = String(name || ''); return lt && n.startsWith(lt) && n.length > lt.length ? n.slice(lt.length).replace(/^[\s｜|:：-]+/, '') : n; };
+    const tabsRow = h('div', { class: 'seg-tabs hc-tabs', role: 'tablist' });
+    mineHandouts.forEach((x, k) => tabsRow.append(h('button', { type: 'button', class: 'filter', role: 'tab', 'aria-pressed': String(k === 0), title: x.handout_title || x.title,
+      onclick: (e) => { tabsRow.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b === e.currentTarget))); if (other) other.value = ''; show(x); } },
+      trim(x.handout_title || x.title), sharedIds.has(x.id) ? h('span', { class: 'hc-badge' }, '全課') : null)));
+    let other = null;
+    if (otherHandouts.length) {
+      other = h('select', { class: 'hc-other', 'aria-label': '其他講次的講義' }, h('option', { value: '' }, '其他講次 ▾'));
+      const groups = new Map();
+      for (const { x, lesson } of otherHandouts) { const g = lesson ? `${lesson.order ? lesson.order + '　' : ''}${lesson.lesson_title || lesson.title}` : '其他'; if (!groups.has(g)) groups.set(g, []); groups.get(g).push(x); }
+      for (const [g, xs] of groups) other.append(h('optgroup', { label: g }, xs.map((x) => h('option', { value: x.id }, x.handout_title || x.title))));
+      other.addEventListener('change', () => {
+        const x = c.handouts.find((y) => y.id === other.value);
+        if (!x) return;
+        tabsRow.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', 'false'));
+        show(x);
+      });
     }
+    box.append(h('div', { class: 'hc-tools' }, tabsRow, other));
+    box.append(doc);
+    if (mineHandouts.length) await show(mineHandouts[0]);
+    else doc.replaceChildren(h('p', { class: 'muted' }, '這一講沒有掛接講義；可從「其他講次」選一份。'));
     return box;
   };
   panes.concepts = () => h('div', null, lconcepts.map((x) => {
