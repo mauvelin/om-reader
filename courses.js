@@ -60,7 +60,7 @@ async function lrec() {
   const r = await kvGet('learn-rec');
   let o = {};
   if (r) { try { o = JSON.parse(td.decode(await open_(r))); } catch (e) { o = {}; } }
-  LREC = { progress: o.progress || {}, recent: o.recent || {} };
+  LREC = { progress: o.progress || {}, recent: o.recent || {}, bookmarks: o.bookmarks || {} };
   return LREC;
 }
 let lrecTimer = null;
@@ -300,6 +300,7 @@ async function viewLesson(id, qs) {
   const tabs = [['transcript', '逐字稿'], ['summary', '摘要']];
   if (handouts.length) tabs.push(['handouts', `講義（${handouts.length}）`]);
   if (c.notes.length) tabs.push(['notes', '我的筆記']);
+  tabs.push(['bookmarks', '書籤']);
   const panes = {};
   const pane = h('div', { class: 'tab-pane' });
   const seekBtn = (t) => h('button', { type: 'button', class: 'ts', 'data-seek': String(t) }, clock(t));
@@ -335,6 +336,40 @@ async function viewLesson(id, qs) {
     }
     return box;
   };
+  panes.bookmarks = () => {
+    const status = h('p', { class: 'status', role: 'status' });
+    const list = h('ul', { class: 'bookmarks' });
+    const render = () => {
+      const rows = bookmarksOf(l.id);
+      list.replaceChildren(...(rows.length ? rows.map((b) => {
+        const input = h('input', { type: 'text', class: 'bookmark-text', placeholder: '寫一句話（可留白）', 'aria-label': '書籤內容' });
+        input.value = b.text || '';
+        input.addEventListener('change', () => bookmarkPut(b.uid, { ...LREC.bookmarks[b.uid], text: input.value }));
+        input.addEventListener('keydown', (e) => { if (e.key === 'Enter') input.blur(); });
+        const del = h('button', { type: 'button', class: 'btn quiet', 'aria-label': '刪除這個書籤', onclick: () => { LREC.bookmarks[b.uid] = { deleted: true, at: new Date().toISOString() }; lrecSave(); render(); } }, '刪除');
+        return h('li', { class: 'bookmark' }, seekBtn(Math.floor(b.t_s)), input, del);
+      }) : [h('li', { class: 'muted' }, '還沒有書籤。播放時按「＋ 在這裡加書籤」。')]));
+      wireSeek(list);
+    };
+    const add = h('button', { type: 'button', class: 'btn primary', onclick: () => {
+      if (!mine()) { status.textContent = '要先播放這一講，才知道書籤落在哪一秒。'; return; }
+      const uid = crypto.randomUUID ? crypto.randomUUID() : gRandom();
+      const now = new Date().toISOString();
+      bookmarkPut(uid, { lesson_id: l.id, course_id: c.id, t_s: Math.round(playerEl().currentTime * 10) / 10, text: '', created_at: now });
+      render();
+      const inputs = list.querySelectorAll('.bookmark-text');
+      const row = [...list.querySelectorAll('.bookmark')].find((li) => li.querySelector('.ts') && Number(li.querySelector('.ts').dataset.seek) === Math.floor(LREC.bookmarks[uid].t_s));
+      (row ? row.querySelector('.bookmark-text') : inputs[inputs.length - 1]).focus();
+    } }, '＋ 在這裡加書籤');
+    const copy = h('button', { type: 'button', class: 'btn', onclick: async () => {
+      const rows = bookmarksOf(l.id);
+      if (!rows.length) { status.textContent = '這一講還沒有書籤可以複製。'; return; }
+      const txt = rows.map((b) => bookmarkLine(l, b)).join('\n');
+      status.textContent = (await copyText(txt)) ? `已複製 ${rows.length} 行，貼到 Notion 的課程筆記即可；下次同步後會出現在對應的講次旁邊。` : '自動複製失敗：' + txt;
+    } }, '複製成筆記格式');
+    render();
+    return h('div', null, h('div', { class: 'row' }, add, copy), status, list);
+  };
   const back = h('button', { type: 'button', class: 'btn back-current', hidden: true });
   const show = async (k) => {
     setQs('tab', k === 'transcript' ? null : k);
@@ -345,6 +380,42 @@ async function viewLesson(id, qs) {
   if (!tabs.some((t) => t[0] === cur)) cur = 'transcript';
 
   const prev = c.lessons[i - 1], next = c.lessons[i + 1];
+  // 影片下方的重點刻度（重點與練習應用的時間點）：拿到長度才畫，點了跳過去
+  const points = (summary ? summary.sections : []).filter((x) => x.name === '重點' || x.name === '練習應用')
+    .flatMap((x) => x.items.filter((it) => it.t_s != null).map((it) => ({ ...it, kind: x.name })));
+  const ticks = h('div', { class: 'ticks', hidden: true, 'aria-label': '重點時間' });
+  let ticksFor = 0;
+  const drawTicks = (dur) => {
+    if (!points.length || !dur || dur === ticksFor) return;
+    ticksFor = dur;
+    // 位置用 element.style 設（CSP 擋 style 屬性，不擋程式設定的樣式）
+    ticks.replaceChildren(...points.map((pt) => {
+      const b = h('button', { type: 'button', class: 'tick' + (pt.kind === '練習應用' ? ' practice' : ''), 'data-seek': String(pt.t_s),
+        'aria-label': `${clock(pt.t_s)} ${pt.text.slice(0, 24)}`, title: `${clock(pt.t_s)} ${pt.text.slice(0, 40)}` });
+      b.style.left = `${Math.min(100, Math.max(0, (pt.t_s / dur) * 100)).toFixed(2)}%`;
+      return b;
+    }));
+    ticks.hidden = false;
+    wireSeek(ticks);
+  };
+  // 播完：提示下一講，不自動播
+  const endNote = h('div', { class: 'note end-note', hidden: true }, '這一講播完了。',
+    next ? h('a', { class: 'btn primary', href: '#/lesson/' + next.id }, `下一講：${next.order ? next.order + '　' : ''}${next.lesson_title || next.title}`) : h('span', null, '這是最後一講。'));
+  media.append(ticks, endNote);
+  // 講次目錄：同一門課的全部講次，目前這一講標出來（多梯次依系列分組）
+  const toc = h('details', { class: 'aux lesson-toc' }, h('summary', null, `講次目錄（${i + 1}／${c.lessons.length}）`));
+  let tocSeries = null, tocList = null;
+  for (const x of c.lessons) {
+    if ((x.series || '') !== tocSeries || !tocList) {
+      tocSeries = x.series || '';
+      if (new Set(c.lessons.map((y) => y.series || '')).size > 1) toc.append(h('div', { class: 'chapter-head' }, tocSeries || '其他'));
+      tocList = h('ol', { class: 'toc-list' });
+      toc.append(tocList);
+    }
+    tocList.append(h('li', { class: x.id === l.id ? 'here' : null }, x.id === l.id
+      ? h('span', null, `${x.order ? x.order + '　' : ''}${x.lesson_title || x.title}（這一講）`)
+      : h('a', { href: '#/lesson/' + x.id }, `${x.order ? x.order + '　' : ''}${x.lesson_title || x.title}`), progressBadge(x)));
+  }
   const nav = h('div', { class: 'doc-nav' },
     prev ? h('a', { class: 'btn', href: '#/lesson/' + prev.id, 'aria-label': `上一講 ${prev.order || ''}` }, svgIcon('back'), prev.order || '上一講') : h('span'),
     h('a', { class: 'btn quiet', href: '#/course/' + encodeURIComponent(c.id) }, '講次目錄'),
@@ -352,7 +423,7 @@ async function viewLesson(id, qs) {
   const head = areaColor(h('div', { class: 'doc-head' }, h('nav', { class: 'crumb' }, h('a', { href: '#/course/' + encodeURIComponent(c.id) }, c.title)),
     h('h1', null, l.lesson_title || l.title)), null, c.category);
   setView(head, h('p', { class: 'page-sub' }, [l.order, l.series, l.date].filter(Boolean).join('・')), media,
-    tabBar(tabs, cur, show), pane, back, nav);
+    tabBar(tabs, cur, show), pane, back, toc, nav);
   await show(cur);
 
   // 播放畫面：這一講的播放器已經在跑（例如從底部小播放器點回來）就借進來；之後才開的，開好會自己借進來
@@ -380,6 +451,8 @@ async function viewLesson(id, qs) {
   const tick = setInterval(() => {
     if (!mine()) { back.hidden = true; return; }
     const el = playerEl();
+    if (Number.isFinite(el.duration)) drawTicks(el.duration);
+    endNote.hidden = !el.ended;
     const now = el.currentTime;
     const segs = [...pane.querySelectorAll('.seg[data-t]')];
     let found = null;
@@ -402,6 +475,30 @@ async function viewLesson(id, qs) {
   }, 500);
   sig.addEventListener('abort', () => clearInterval(tick));
 }
+/* ── 書籤（照資料契約 bookmarks：鍵＝uid；刪除寫成刪除標記，同步時別台裝置才不會把它帶回來） ── */
+function bookmarksOf(lessonId) {
+  return Object.entries(LREC.bookmarks).filter(([, b]) => !b.deleted && b.lesson_id === lessonId)
+    .map(([uid, b]) => ({ uid, ...b })).sort((a, b) => a.t_s - b.t_s);
+}
+function bookmarkPut(uid, b) { LREC.bookmarks[uid] = { ...b, at: new Date().toISOString() }; lrecSave(); }
+// 「複製成筆記格式」：@講次 hh:mm:ss 一句話——本人 Notion 課程筆記已在用的錨點格式（learn 同一套）
+function bookmarkLine(l, b) {
+  const text = (b.text || '').replace(/\s+/g, ' ').trim();
+  const time = clock(Math.floor(b.t_s));
+  if (l.order) return `@${l.order} ${time}${text ? ' ' + text : ''}`;
+  return `${time}${text ? ' ' + text : ''}（${l.lesson_title || l.title}${l.date ? '，' + l.date : ''}）`;
+}
+async function copyText(text) {
+  try { await navigator.clipboard.writeText(text); return true; } catch (e) {
+    const area = h('textarea', { readonly: true });
+    area.value = text; area.style.position = 'fixed'; area.style.opacity = '0';
+    document.body.append(area); area.select();
+    const ok = document.execCommand && document.execCommand('copy');
+    area.remove();
+    return !!ok;
+  }
+}
+
 // LearnText.renderMarkdown 回傳字串；renderTranscript 回傳 {html}
 function asHtml(x) { return typeof x === 'string' ? x : (x && x.html) || ''; }
 
