@@ -116,7 +116,7 @@ function startLogin(silent) {
   const client = $('g-client').value.trim();
   if (!/\.apps\.googleusercontent\.com$/.test(client)) { step($('g-out'), false, '請先填 OAuth 用戶端 ID'); return; }
   sSet('localStorage', 'om-media-client', client);
-  const state = Math.random().toString(36).slice(2);
+  const state = Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, '0')).join('');
   sSet('sessionStorage', 'om-media-state', state);
   sSet('localStorage', 'om-media-state', state);
   sSet('localStorage', 'om-media-left', JSON.stringify({ at: Date.now(), standalone: isStandalone(), silent: !!silent }));
@@ -282,7 +282,7 @@ function seekTo(frac, label) {
   seekTarget = { t, at: Date.now(), label };
   v.currentTime = t;
 }
-const EV = ['loadedmetadata', 'canplay', 'playing', 'waiting', 'stalled', 'seeked', 'ended', 'error'];
+const EV = ['loadedmetadata', 'canplay', 'play', 'playing', 'pause', 'waiting', 'stalled', 'seeked', 'ended', 'error'];
 for (const name of EV) {
   v.addEventListener(name, () => {
     const left = TOKEN ? Math.round((TOKEN_EXP - Date.now()) / 60000) : null;
@@ -298,7 +298,9 @@ for (const name of EV) {
       seekTarget = null;
     }
     if (name === 'error') { ok = false; text += `　錯誤碼 ${v.error && v.error.code}${v.error && v.error.message ? '：' + v.error.message : ''}`; R.play.error = v.error && v.error.code; }
-    if (name === 'stalled' || name === 'waiting') ok = null;
+    if (name === 'stalled' || name === 'waiting') { ok = null; text += v.paused ? '　（暫停中，不算卡住）' : '　（播放中等資料）'; }
+    if (name === 'pause') { ok = null; text += v.ended ? '　（播完）' : '　（暫停）'; }
+    if (name === 'play') ok = null;
     if (name === 'ended') ok = true;
     if (left != null) text += `　token 剩 ${left} 分`;
     R.play.events.push(name);
@@ -306,6 +308,19 @@ for (const name of EV) {
     renderSummary();
   });
 }
+// 播放中每 60 秒記一次位置：分得出「一直在播」和「停住了」
+let lastTick = { wall: 0, ct: 0 };
+v.addEventListener('timeupdate', () => {
+  const now = Date.now();
+  if (v.paused || now - lastTick.wall < 60000) return;
+  if (lastTick.wall) {
+    const adv = Math.round(v.currentTime - lastTick.ct);
+    const left = TOKEN ? Math.round((TOKEN_EXP - now) / 60000) : null;
+    plog(adv > 0, `播放中　位置 ${fmtT(v.currentTime)}　這段播了 ${adv} 秒${left != null ? `　token 剩 ${left} 分` : ''}`);
+  }
+  lastTick = { wall: now, ct: v.currentTime };
+});
+v.addEventListener('pause', () => { lastTick = { wall: 0, ct: 0 }; });
 setInterval(() => {
   renderTokenInfo();
   const dl = $('p-info');
