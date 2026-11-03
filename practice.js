@@ -41,11 +41,11 @@ function practiceLog(item, minutes, source) {
 function practiceProgressSave(meta, el) {
   const dur = Number.isFinite(el.duration) ? el.duration : 0;
   const now = new Date().toISOString();
-  LREC.practice_progress[meta.itemId] = { t_s: Math.round(el.currentTime * 10) / 10, duration_s: dur ? Math.round(dur) : null, at: now };
+  LREC.practice_progress[meta.itemId] = { t_s: Math.round(el.currentTime * 10) / 10, duration_s: dur ? Math.round(dur) : 0, at: now };
   if (dur && !meta.durationMin) LREC.practice_durations[meta.itemId] = { duration_s: Math.round(dur * 10) / 10, at: now };
   let watched = 0;
   for (let i = 0; i < el.played.length; i++) watched += el.played.end(i) - el.played.start(i);
-  lrecSave();
+  lrecSave('progress');
   if (dur && watched >= dur * AUTO_LOG_RATIO && !meta.autoLogged) {
     meta.autoLogged = true;
     if (practiceLog({ id: meta.itemId, duration_min: meta.durationMin }, dur / 60, 'auto80') && typeof meta.onLogged === 'function') meta.onLogged('auto80');

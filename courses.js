@@ -106,8 +106,10 @@ async function lrec() {
   return LREC;
 }
 let lrecTimer = null;
-function lrecSave() {
+// kind＝'progress'：播放中的進度（紀錄同步最多每分鐘寫一次）；其他變動停手幾秒就寫（records.js）
+function lrecSave(kind) {
   clearTimeout(lrecTimer);
+  if (typeof recTouch === 'function') recTouch(kind);
   lrecTimer = setTimeout(async () => { if (KEY && LREC) await kvSet('learn-rec', await seal(te.encode(JSON.stringify(LREC)))); }, 400);
 }
 // learn 的規則：拿到長度、套好起始位置之後才寫；≥99% 或播到結束記看完，看完不取消
@@ -120,11 +122,11 @@ function progressSave(meta, el) {
   const prev = LREC.progress[meta.key] || {};
   const now = new Date().toISOString();
   LREC.progress[meta.key] = {
-    t_s: Math.round(el.currentTime * 10) / 10, duration_s: dur ? Math.round(dur) : (prev.duration_s || null),
+    t_s: Math.round(el.currentTime * 10) / 10, duration_s: dur ? Math.round(dur) : (prev.duration_s || 0),
     completed: !!prev.completed || el.ended || (dur > 0 && el.currentTime / dur >= 0.99), at: now,
   };
   LREC.recent[meta.lessonId] = { course_id: meta.courseId, at: now };
-  lrecSave();
+  lrecSave('progress');
 }
 function lessonProgress(l) {
   const p = LREC && l.media && l.media.key ? LREC.progress[l.media.key] : null;
@@ -521,7 +523,7 @@ async function viewLesson(id, qs) {
     const render = () => {
       const rows = bookmarksOf(l.id);
       list.replaceChildren(...(rows.length ? rows.map((b) => {
-        const input = h('input', { type: 'text', class: 'bookmark-text', placeholder: '寫一句話（可留白）', 'aria-label': '書籤內容' });
+        const input = h('input', { type: 'text', class: 'bookmark-text', placeholder: '寫一句話（可留白）', 'aria-label': '書籤內容', maxlength: '500' });
         input.value = b.text || '';
         input.addEventListener('change', () => bookmarkPut(b.uid, { ...LREC.bookmarks[b.uid], text: input.value }));
         input.addEventListener('keydown', (e) => { if (e.key === 'Enter') input.blur(); });
