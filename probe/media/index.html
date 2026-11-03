@@ -62,7 +62,8 @@
 
   <section class="card">
     <h2>3　在 App 裡播放</h2>
-    <p class="muted">播放器只連同源網址，由 Service Worker 帶上 token 轉給雲端硬碟。請測：開始播放、拖到中間、拖到結尾前、暫停幾分鐘再播；
+    <p class="muted">播放器只連同源網址，由 Service Worker 帶上 token 轉給雲端硬碟。這一頁每 5 秒記下目前的檔案與位置：
+    不管從哪個按鈕重新登入，回來都會自動載入、跳回原位置（按播放繼續）。請測：開始播放、拖到中間、拖到結尾前、暫停幾分鐘再播；
     有空的話放一支 70 分鐘以上的影片，播過 token 到期的時間點，看會怎樣。</p>
     <div class="player"><video id="v" controls playsinline preload="metadata"></video></div>
     <div class="row">
@@ -86,11 +87,23 @@
 
   <section class="card">
     <h2>5　背景、鎖定螢幕、墊旁</h2>
-    <p class="muted">用第 3 節的播放器（影片或音訊檔都可以）。開始播放後：① 鎖定螢幕 3 分鐘再打開；② 切到別的 App 3 分鐘再回來。
-    這裡會記下離開多久、期間播了多少秒。</p>
+    <p class="muted">先在第 3 節載入檔案。下面三種方式各測一次：開始播放後，<strong>鎖定螢幕 1 分鐘</strong>再打開，
+    或<strong>切到別的 App 1 分鐘</strong>再回來。這裡會記下用哪種方式、離開多久、期間播了多少秒，以及系統有沒有在背景把它暫停。</p>
+    <ol class="steps">
+      <li>影片：直接用第 3 節的播放器播放。</li>
+      <li>聲音模式：按「改用聲音模式」，只播聲音（同一個檔），鎖定畫面應該會出現播放控制。</li>
+      <li>子母畫面：播放影片時按「子母畫面」，再回主畫面或切到別的 App。</li>
+    </ol>
+    <div class="player audio"><audio id="a" controls preload="none"></audio></div>
+    <div class="row">
+      <button id="b-audio" type="button" class="primary">改用聲音模式</button>
+      <button id="b-video" type="button">回到影片</button>
+      <button id="b-pip" type="button">子母畫面</button>
+    </div>
     <div class="row">
       <button id="b-wake" type="button">保持螢幕亮著（墊旁模式）</button>
     </div>
+    <p id="b-mode" class="out" role="status"></p>
     <ol id="b-out" class="steps"></ol>
   </section>
 

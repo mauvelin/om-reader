@@ -5,7 +5,7 @@
 
 const $ = (id) => document.getElementById(id);
 const R = { login: {}, find: {}, play: { ranges: 0, r206: 0, r200: 0, synth: 0, unauth: 0, swRestarts: 0, events: [] },
-  direct: {}, bg: [], links: {}, pdf: {}, write: {} };
+  direct: {}, bg: [], links: {}, pdf: {}, write: {}, sysPause: [], pip: null, audio: {} };
 const SCOPES = 'https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/drive.file';
 const API = 'https://www.googleapis.com/drive/v3';
 const UPLOAD = 'https://www.googleapis.com/upload/drive/v3';
@@ -295,6 +295,7 @@ for (const name of EV) {
       ok = Math.abs(v.currentTime - seekTarget.t) < 3;
       text += `　（${seekTarget.label}，${ms} ms）`;
       R.play[seekTarget.label] = ok ? `${ms} ms` : '位置不對';
+      if (seekTarget.label === '回到登入前的位置') R.play.resume = ok ? `接回 ${R.play.resumeFrom}（${ms} ms）` : '位置不對';
       seekTarget = null;
     }
     if (name === 'error') { ok = false; text += `　錯誤碼 ${v.error && v.error.code}${v.error && v.error.message ? '：' + v.error.message : ''}`; R.play.error = v.error && v.error.code; }
@@ -338,26 +339,30 @@ setInterval(() => {
   }
   R.play.maxPos = Math.max(R.play.maxPos || 0, Math.round(v.currentTime / 60));
 }, 1000);
+// 每 5 秒記下目前的檔案、位置與模式（只存在這支裝置，測試用）；登入回來自動接回
+function saveLast() {
+  if (!CUR) return;
+  const el = act();
+  sSet('localStorage', 'om-media-last', JSON.stringify({ id: CUR.id, t: el.currentTime || 0, at: Date.now() }));
+}
+setInterval(saveLast, 5000);
 function relogin() {
   if (!CUR) { plog(false, '請先找到檔案'); return; }
-  sSet('sessionStorage', 'om-media-resume', JSON.stringify({ id: CUR.id, t: v.currentTime || 0 }));
-  sSet('localStorage', 'om-media-resume', JSON.stringify({ id: CUR.id, t: v.currentTime || 0 }));
+  saveLast();
   startLogin(false);
 }
 async function resumeAfterLogin() {
-  const raw = sGet('sessionStorage', 'om-media-resume') || sGet('localStorage', 'om-media-resume');
-  sDel('sessionStorage', 'om-media-resume');
-  sDel('localStorage', 'om-media-resume');
+  const raw = sGet('localStorage', 'om-media-last');
   if (!raw || !TOKEN) return;
   const r = JSON.parse(raw);
   try {
     CUR = await (await gapi(`/files/${r.id}?fields=${FIELDS}`)).json();
     if (CUR.size) swPost({ type: 'size', id: CUR.id, size: Number(CUR.size) });
     renderLinks();
-    R.play.resume = '已載入';
-    plog(null, `登入回來，接著播放（${fmtT(r.t)}）`);
+    R.play.resumeFrom = fmtT(r.t);
+    plog(null, `登入回來，自動載入上次的檔案，跳回 ${fmtT(r.t)}（按播放繼續）`);
     loadPlayer(r.t);
-  } catch (e) { R.play.resume = '失敗：' + e.message; plog(false, '接著播放失敗：' + e.message); }
+  } catch (e) { R.play.resume = '失敗：' + e.message; plog(false, '自動接回失敗：' + e.message); }
 }
 
 /* ── 4 直接網址 ─────────────────────────────────────── */
@@ -375,23 +380,117 @@ function loadDirect() {
 }
 
 /* ── 5 背景、鎖定螢幕、墊旁 ─────────────────────────── */
+const a = $('a');
+let MODE = '影片';
+let PIP = false;
+const act = () => (MODE === '聲音' ? a : v);
+function modeText() { return PIP ? '子母畫面' : MODE; }
+function showMode() { $('b-mode').textContent = `目前：${modeText()}${act().paused ? '（暫停）' : '（播放中）'}`; }
+function toAudio() {
+  if (!CUR) { step($('b-out'), false, '請先在第 3 節載入檔案'); return; }
+  const t = v.currentTime || 0;
+  v.pause();
+  MODE = '聲音';
+  a.src = './drive-media/' + CUR.id;
+  a.addEventListener('loadedmetadata', () => { a.currentTime = t; }, { once: true });
+  const p = a.play();   // 在點擊當下呼叫，iOS 才允許播放
+  if (p) p.then(() => { R.audio.play = '成功'; renderSummary(); })
+    .catch((e) => { R.audio.play = '失敗：' + e.name; step($('b-out'), false, '聲音模式無法播放：' + e.message); renderSummary(); });
+  setupMediaSession();
+  plog(null, `改用聲音模式，從 ${fmtT(t)} 開始`);
+  showMode();
+}
+function toVideo() {
+  const t = a.currentTime || v.currentTime || 0;
+  a.pause();
+  MODE = '影片';
+  v.currentTime = t;
+  v.play().catch(() => {});
+  plog(null, `回到影片，從 ${fmtT(t)} 開始`);
+  showMode();
+}
+async function togglePip() {
+  const out = $('b-out');
+  if (MODE !== '影片') toVideo();
+  try {
+    if (document.pictureInPictureEnabled && v.requestPictureInPicture) {
+      await v.requestPictureInPicture();
+      R.pip = '成功（標準 API）';
+    } else if (v.webkitSupportsPresentationMode && v.webkitSupportsPresentationMode('picture-in-picture')) {
+      v.webkitSetPresentationMode('picture-in-picture');
+      R.pip = '已要求（WebKit API）';
+    } else {
+      R.pip = '不支援';
+      step(out, false, '這個環境不支援子母畫面');
+    }
+  } catch (e) { R.pip = '失敗：' + e.name; step(out, false, '子母畫面失敗：' + e.message); }
+  renderSummary();
+}
+v.setAttribute('autopictureinpicture', '');
+v.addEventListener('enterpictureinpicture', () => { PIP = true; plog(true, '進入子母畫面'); showMode(); });
+v.addEventListener('leavepictureinpicture', () => { PIP = false; plog(null, '離開子母畫面'); showMode(); });
+v.addEventListener('webkitpresentationmodechanged', () => {
+  PIP = v.webkitPresentationMode === 'picture-in-picture';
+  plog(PIP ? true : null, PIP ? '進入子母畫面（WebKit）' : `畫面模式：${v.webkitPresentationMode}`);
+  showMode();
+});
+function setupMediaSession() {
+  if (!('mediaSession' in navigator)) return;
+  try {
+    navigator.mediaSession.metadata = new MediaMetadata({ title: CUR ? CUR.name : 'OM 影音測試', artist: 'OM' });
+    navigator.mediaSession.setActionHandler('play', () => act().play());
+    navigator.mediaSession.setActionHandler('pause', () => act().pause());
+    navigator.mediaSession.setActionHandler('seekbackward', () => { act().currentTime = Math.max(0, act().currentTime - 15); });
+    navigator.mediaSession.setActionHandler('seekforward', () => { act().currentTime += 15; });
+  } catch (e) { /* 部分動作不支援時略過 */ }
+}
+for (const name of ['playing', 'pause', 'stalled', 'waiting', 'error']) {
+  a.addEventListener(name, () => {
+    let text = `聲音 ${name}　位置 ${fmtT(a.currentTime)}`;
+    if (name === 'error') text += `　錯誤碼 ${a.error && a.error.code}`;
+    plog(name === 'playing' ? true : name === 'error' ? false : null, text);
+    showMode();
+  });
+}
+// 系統在背景時把它暫停了嗎？（也可能是你在鎖定畫面按了暫停）——試著自動恢復一次
+let resumedThisHide = false;
+function onPause(ev) {
+  if (document.visibilityState !== 'hidden' || ev.target !== act()) return;
+  const el = ev.target;
+  const rec = { mode: modeText(), at: fmtT(el.currentTime), retry: '…' };
+  R.sysPause.push(rec);
+  plog(false, `背景時被暫停（${rec.mode}，${rec.at}）；若不是你在鎖定畫面按的，就是系統暫停的`);
+  if (!resumedThisHide) {
+    resumedThisHide = true;
+    el.play().then(() => { rec.retry = '自動恢復成功'; plog(true, '自動恢復播放成功'); renderSummary(); })
+      .catch((e) => { rec.retry = '自動恢復失敗 ' + e.name; plog(false, '自動恢復失敗：' + e.name); renderSummary(); });
+  }
+  renderSummary();
+}
+v.addEventListener('pause', onPause);
+a.addEventListener('pause', onPause);
 let hidden = null;
 document.addEventListener('visibilitychange', () => {
+  const el = act();
   if (document.visibilityState === 'hidden') {
-    hidden = { at: Date.now(), ct: v.currentTime, playing: !v.paused };
+    hidden = { at: Date.now(), ct: el.currentTime, playing: !el.paused, mode: modeText() };
+    resumedThisHide = false;
+    plog(null, `離開 App（${hidden.mode}${hidden.playing ? '，播放中' : '，暫停'}）`);
     return;
   }
   if (!hidden) return;
   const away = Math.round((Date.now() - hidden.at) / 1000);
-  const adv = Math.round(v.currentTime - hidden.ct);
+  const adv = Math.round(el.currentTime - hidden.ct);
+  plog(null, `回到 App：離開 ${away} 秒，期間播了 ${adv} 秒`);
   if (hidden.playing && away >= 20) {
     const kept = adv >= away * 0.8;
-    R.bg.push({ away, adv, kept, nowPlaying: !v.paused });
-    step($('b-out'), kept, `離開 ${away} 秒，期間播了 ${adv} 秒${kept ? '：背景繼續播放' : '：背景時停住了'}；回來時${v.paused ? '是暫停' : '仍在播放'}`);
+    R.bg.push({ mode: hidden.mode, away, adv, kept, nowPlaying: !el.paused });
+    step($('b-out'), kept, `${hidden.mode}：離開 ${away} 秒，期間播了 ${adv} 秒${kept ? '，背景繼續播放' : '，背景時停住了'}；回來時${el.paused ? '是暫停' : '仍在播放'}`);
     renderSummary();
   }
   if (WAKE.want && !WAKE.lock) requestWake();
   hidden = null;
+  showMode();
 });
 const WAKE = { want: false, lock: null };
 async function requestWake() {
@@ -545,11 +644,12 @@ function renderSummary() {
   L.push(`3 App 內播放：${P.kind || '未測'}；長度 ${P.duration ?? '—'} 分；拿到長度 ${P.metaMs ?? '—'} ms；開始播放 ${P.firstPlayMs ?? '—'} ms`);
   L.push(`  跳到 50%：${P['跳到 50%'] || '—'}；跳到結尾前：${P['跳到結尾前 1 分鐘'] || '—'}；最遠播到 ${P.maxPos ?? 0} 分；錯誤碼 ${P.error ?? '無'}`);
   L.push(`  請求 ${P.ranges} 次（206：${P.r206}、200：${P.r200}、Content-Range 自己補：${P.synth}）；401/403：${P.unauth}；SW 重啟：${P.swRestarts}`);
-  L.push(`  token 到期後仍播放：${P.playedAfterExpiryS != null ? P.playedAfterExpiryS + ' 秒' : '未測'}；重新登入後接著播：${P.resume || '未測'}`);
+  L.push(`  token 到期後仍播放：${P.playedAfterExpiryS != null ? P.playedAfterExpiryS + ' 秒' : '未測'}；重新登入後接著播：${P.resume || (P.resumeFrom ? '已載入、等拖回位置' : '未測')}`);
   L.push(`  事件順序：${P.events.slice(-25).join(' → ') || '—'}`);
   const D = R.direct;
   L.push(`4 直接網址：${D.ok === true ? `可以（${D.ms} ms）；拖動 ${yn(D.seek)}` : D.ok === false ? `不行（錯誤碼 ${D.code}）` : '未測'}`);
-  L.push(`5 背景：${R.bg.length ? R.bg.map((b) => `離開 ${b.away} 秒播了 ${b.adv} 秒${b.nowPlaying ? '（回來仍播放）' : '（回來是暫停）'}`).join('；') : '未測'}；保持螢幕亮著 ${R.wake || '未測'}`);
+  L.push(`5 背景：${R.bg.length ? R.bg.map((b) => `${b.mode} 離開 ${b.away} 秒播了 ${b.adv} 秒${b.kept ? '（繼續播）' : '（停住）'}${b.nowPlaying ? '、回來仍播放' : '、回來是暫停'}`).join('；') : '未測'}`);
+  L.push(`  背景時被暫停：${R.sysPause.length ? R.sysPause.map((x) => `${x.mode}→${x.retry}`).join('；') : '無'}；聲音模式播放 ${R.audio.play || '未測'}；子母畫面 ${R.pip || '未測'}；保持螢幕亮著 ${R.wake || '未測'}`);
   L.push(`6 雲端硬碟 App：view＝${R.links.view || '未回報'}；open＝${R.links.open || '未回報'}`);
   L.push(`7 PDF：下載 ${R.pdf.download || '未測'}；頁面內顯示＝${R.pdf.frame || '未回報'}；新視窗＝${R.pdf.tab || '未回報'}`);
   L.push(`8 寫回：${R.write.ok === true ? `成功（${R.write.ms} ms）` : R.write.ok === false ? '失敗 ' + (R.write.error || '') : '未測'}；電腦上＝${R.write.pc || '未回報'}`);
@@ -586,6 +686,10 @@ async function onCopy() {
   $('p-relogin').addEventListener('click', relogin);
   $('d-load').addEventListener('click', loadDirect);
   $('b-wake').addEventListener('click', requestWake);
+  $('b-audio').addEventListener('click', toAudio);
+  $('b-video').addEventListener('click', toVideo);
+  $('b-pip').addEventListener('click', togglePip);
+  v.addEventListener('playing', () => { setupMediaSession(); showMode(); });
   $('pdf-get').addEventListener('click', getPdf);
   $('pdf-frame').addEventListener('click', pdfFrame);
   $('pdf-tab').addEventListener('click', pdfTab);
