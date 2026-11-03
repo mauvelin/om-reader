@@ -72,6 +72,38 @@ if (navigator.serviceWorker) {
 function offFile(e) { return { id: e.drive.id, name: e.drive.name, size: e.size, mime: e.drive.mime || 'audio/mpeg', offline: e.oid }; }
 const offIsVideo = (e) => /^video\//.test((e && e.drive && e.drive.mime) || '');
 
+/* ── 同一講另有聲音檔（本人 2026-11-04：有些課在雲端硬碟上 mp4 與 mp3 都有，例：邱顯峯－瑜伽四大部經典、
+   阿育吠陀先修班「轉錄用音檔」資料夾）──
+   聲音檔名依序找：① 課程索引的 media.source_file（轉逐字稿用的音檔，檔名可能跟影片完全不同）；
+   ② 同名、副檔名換成 .mp3／.m4a。查到的結果（含「沒有」）記在加密的檔名快取，有的記 30 天、沒有的記 7 天。
+   選影片還是聲音是每門課一個偏好（只存在這支手機）。 */
+const altNames = (key, src) => {
+  const b = String(key || '').replace(/\.[^.]+$/, '');
+  const out = [];
+  if (src && src !== key && /\.(mp3|m4a)$/i.test(src)) out.push(src);
+  for (const n of [b + '.mp3', b + '.m4a']) if (!out.includes(n)) out.push(n);
+  return out;
+};
+const isVideoKey = (key) => /\.(mp4|m4v|mov|webm)$/i.test(String(key || ''));
+async function driveAlt(key, src) {
+  const c = await driveCacheLoad();
+  const names = altNames(key, src);
+  const ck = 'alt:' + key + '|' + names[0];
+  const hit = c[ck];
+  if (hit && Date.now() - hit.at < (hit.f ? 30 : 7) * 86400000) return hit.f;
+  const qs = new URLSearchParams({ q: `(${names.map((n) => `name = '${dEsc(n)}'`).join(' or ')}) and trashed = false`, fields: `files(${D_FIELDS})`, pageSize: '10' });
+  const files = (await (await gfetch(`${DRIVE}/files?${qs}`)).json()).files || [];
+  files.sort((x, y) => names.indexOf(x.name) - names.indexOf(y.name) || String(y.modifiedTime).localeCompare(String(x.modifiedTime)));
+  const f = files[0] ? { id: files[0].id, name: files[0].name, size: Number(files[0].size || 0), mime: files[0].mimeType || '' } : null;
+  c[ck] = { f, at: Date.now() };
+  await driveCacheSave();
+  return f;
+}
+// 離線索引裡已有的聲音檔（沒登入也查得到）
+async function offAltDone(key, src) { for (const n of altNames(key, src)) { const e = await offDone(n); if (e) return e; } return null; }
+const srcPref = (courseId) => { try { return (JSON.parse(localStorage.getItem('om-src') || '{}'))[courseId] || 'video'; } catch (e) { return 'video'; } };
+function srcSet(courseId, v) { try { const m = JSON.parse(localStorage.getItem('om-src') || '{}'); m[courseId] = v; localStorage.setItem('om-src', JSON.stringify(m)); } catch (e) { /* 略過 */ } }
+
 // 下載前先查大小（雲端硬碟），連同手機剩餘空間一起顯示
 async function offLookup(spec) {
   if (spec.driveId) {
@@ -254,17 +286,20 @@ function offButton(spec, onChange) {
   paint();
   return btn;
 }
-// 課程頁：整門課的影音一起下載（先查每一講的大小、加總後確認）
-function offCourseRow(specs, label = '影音') {
+// 課程頁：整門課的影音一起下載（先查每一講的大小、加總後確認）。
+// opts.courseId：這門課的影片另有聲音檔時，出現「影片｜聲音」切換，下載整門課就照選的那一種
+function offCourseRow(specs, label = '影音', opts = {}) {
   const out = h('span', { class: 'muted off-count' });
   const all = h('button', { type: 'button', class: 'btn' });
+  const isDone = (ix, s) => [s.key, ...(isVideoKey(s.key) ? altNames(s.key, s.src) : [])].some((k) => ix[k] && ix[k].state === 'done');
+  const mode = () => (opts.courseId ? srcPref(opts.courseId) : 'video');
   const paint = async () => {
     const ix = await offIndex();
-    const done = specs.filter((s) => ix[s.key] && ix[s.key].state === 'done').length;
+    const done = specs.filter((s) => isDone(ix, s)).length;
     const busy = specs.filter((s) => ix[s.key] && ix[s.key].state !== 'done' && ix[s.key].state !== 'paused').length;
-    const bytes = specs.reduce((n, s) => n + (ix[s.key] && ix[s.key].state === 'done' ? ix[s.key].size : 0), 0);
+    const bytes = specs.reduce((n, s) => n + [s.key, ...(isVideoKey(s.key) ? altNames(s.key, s.src) : [])].reduce((m, k) => m + (ix[k] && ix[k].state === 'done' ? ix[k].size : 0), 0), 0);
     out.textContent = `離線：${done}／${specs.length} 講${bytes ? `（${fmtSize(bytes)}）` : ''}${busy ? `，下載中 ${busy} 講` : ''}`;
-    all.textContent = done === specs.length ? '整門課都已離線' : `下載整門課的${label}`;
+    all.textContent = done === specs.length ? '整門課都已離線' : `下載整門課的${opts.courseId ? (mode() === 'audio' ? '聲音' : '影片') : label}`;
     all.disabled = done === specs.length;
   };
   const listener = () => { if (!out.isConnected && out.dataset.painted) { OFF_LISTENERS.delete(listener); return; } out.dataset.painted = '1'; paint(); };
@@ -272,17 +307,34 @@ function offCourseRow(specs, label = '影音') {
   all.addEventListener('click', async () => {
     if (!gHasToken()) { alert('要先登入 Google 才能下載（到「同步」頁的「雲端硬碟影音」）。'); return; }
     const ix = await offIndex();
-    const todo = specs.filter((s) => !(ix[s.key] && ix[s.key].state === 'done'));
-    all.disabled = true; out.textContent = `查 ${todo.length} 講的大小…`;
-    let bytes = 0, missing = 0;
-    for (const s of todo) { try { const n = await offLookup(s); if (n) bytes += n; else missing++; } catch (e) { missing++; } }
+    const want = specs.filter((s) => !isDone(ix, s));
+    all.disabled = true; out.textContent = `查 ${want.length} 講的大小…`;
+    let bytes = 0, missing = 0, noAudio = 0;
+    const todo = [];
+    for (const s of want) {
+      let s2 = s;
+      if (mode() === 'audio' && isVideoKey(s.key)) {   // 選了聲音：用同名的 mp3／m4a；這一講沒有聲音檔就跳過
+        const a = await driveAlt(s.key, s.src).catch(() => null);
+        if (!a) { noAudio++; continue; }
+        s2 = { ...s, key: a.name, title: s.title + '（聲音）', driveName: a.name };
+      }
+      try { const n = await offLookup(s2); if (n) { bytes += n; todo.push(s2); } else missing++; } catch (e) { missing++; }
+    }
     all.disabled = false; paint();
-    if (!bytes) { alert('雲端硬碟上找不到這門課的影音。'); return; }
-    if (!(await offConfirm(`${todo.length - missing} 講${missing ? `（另有 ${missing} 講在雲端硬碟上找不到）` : ''}`, bytes, true))) return;
+    if (!bytes) { alert(noAudio ? '這門課在雲端硬碟上沒有聲音檔。' : '雲端硬碟上找不到這門課的影音。'); return; }
+    const notes = [missing ? `${missing} 講在雲端硬碟上找不到` : '', noAudio ? `${noAudio} 講沒有聲音檔、不下載` : ''].filter(Boolean).join('，');
+    if (!(await offConfirm(`${todo.length} 講${mode() === 'audio' ? '聲音' : ''}${notes ? `（另有 ${notes}）` : ''}`, bytes, true))) return;
     for (const s of todo) await offEnqueue(s);
   });
   paint();
-  return h('div', { class: 'row off-course' }, all, out);
+  if (!opts.courseId) return h('div', { class: 'row off-course' }, all, out);
+  const seg = h('div', { class: 'seg-tabs src-row', role: 'group', 'aria-label': '下載影片或聲音' });
+  for (const [v, name] of [['video', '影片'], ['audio', '聲音']]) {
+    seg.append(h('button', { type: 'button', class: 'filter', 'aria-pressed': String(mode() === v), onclick: (ev) => {
+      srcSet(opts.courseId, v); seg.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b === ev.currentTarget))); paint();
+    } }, name));
+  }
+  return h('div', { class: 'row off-course' }, all, seg, out);
 }
 async function offSection() {
   const ix = await offIndex();

@@ -368,9 +368,13 @@ label.check input { width: 20px; height: 20px; accent-color: var(--accent); }
 .lesson-media > .status:empty { display: none; }
 /* 離線音檔 */
 .off-btn.on { color: var(--ink-moss); font-weight: var(--fw-strong); }
-.lesson-ctl .off-btn { padding: 4px 6px; margin-left: auto; font-variant-numeric: tabular-nums; }
-.lesson-ctl .fold:not([hidden]) + .off-btn { margin-left: 0; }
+.lesson-ctl .off-btn { padding: 4px 6px; font-variant-numeric: tabular-nums; }
 .off-course { align-items: center; margin: var(--sp-2) 0 0; }
+.src-row { margin: var(--sp-2) 0 0; gap: 6px; }
+.src-row .filter { min-height: 34px; padding: 2px 12px; }
+.off-course .src-row { margin: 0; }
+.off-slot { margin-left: auto; display: inline-flex; }
+.lesson-ctl .fold:not([hidden]) + .off-slot { margin-left: 0; }
 .off-count { font-size: var(--fs-chip); }
 .off-list li.choice a { color: var(--fg); text-decoration: none; display: flex; flex-direction: column; min-width: 0; flex: 1; }
 .off-list li.choice .m { color: var(--muted); font-size: var(--fs-chip); }

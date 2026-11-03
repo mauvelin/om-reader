@@ -77,7 +77,8 @@ async function playerOpen(file, { t = 0, mode, resumed = false, meta = null } = 
     h('div', { class: 'row' }, modeBtn, h('a', { class: 'btn', href: driveViewUrl(file.id), target: '_blank', rel: 'noopener noreferrer' }, svgIcon('external'), '雲端硬碟')));
   paintMode();
   playerLoad(playerEl(), t);
-  if (PLAYER_SLOT && (PLAYER_SLOT.name === file.name || PLAYER_SLOT.name === file.id) && PLAYER_SLOT.el.isConnected) playerAdopt(PLAYER_SLOT.el);
+  // 講次頁認得自己的播放器：檔名、雲端硬碟 ID，或同一講的聲音檔名（alt）
+  if (PLAYER_SLOT && (PLAYER_SLOT.name === file.name || PLAYER_SLOT.name === file.id || (PLAYER_SLOT.alt || []).includes(file.name)) && PLAYER_SLOT.el.isConnected) playerAdopt(PLAYER_SLOT.el);
 }
 function playerLoad(el, t) {
   PLAYER.lastT = t;

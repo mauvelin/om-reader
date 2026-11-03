@@ -281,9 +281,17 @@ async function viewCourseById(id, qs) {
   if (!tabs.some((t) => t[0] === cur)) cur = 'lessons';
   // 有影音的課：整門課一起下載離線（啟用雲端硬碟功能才出現）
   const offSpecs = c.lessons.filter((l) => l.media && l.media.key && offCanMedia(l.media.key))
-    .map((l) => ({ key: l.media.key, title: `${c.title}｜${l.order ? l.order + ' ' : ''}${l.lesson_title || l.title}`, kind: 'lesson', ref: l.id, driveName: l.media.key }));
+    .map((l) => ({ key: l.media.key, src: l.media.source_file, title: `${c.title}｜${l.order ? l.order + ' ' : ''}${l.lesson_title || l.title}`, kind: 'lesson', ref: l.id, driveName: l.media.key }));
   const allAudio = offSpecs.every((x) => !/\.(mp4|m4v|mov|webm)$/i.test(x.key));
-  const offRow = offSpecs.length && (await gSettings()).enabled ? offCourseRow(offSpecs, allAudio ? '音檔' : '影音') : null;
+  const gs = await gSettings();
+  // 影片課：前幾講在雲端硬碟上有同名聲音檔，就出現「影片｜聲音」切換
+  // 索引記了轉錄用音檔（source_file）的課直接出現；否則看前幾講在雲端硬碟上有沒有同名聲音檔
+  let hasAlt = offSpecs.some((x) => isVideoKey(x.key) && altNames(x.key, x.src)[0] === x.src);
+  if (!hasAlt && !allAudio && gs.enabled && gHasToken()) {
+    const first = offSpecs.filter((x) => isVideoKey(x.key)).slice(0, 3);
+    hasAlt = (await Promise.all(first.map((x) => driveAlt(x.key, x.src).catch(() => null)))).some(Boolean);
+  }
+  const offRow = offSpecs.length && gs.enabled ? offCourseRow(offSpecs, allAudio ? '音檔' : '影音', hasAlt ? { courseId: c.id } : {}) : null;
   setView(head, h('div', { class: 'chips' }, c.category ? areaChip(c.category) : null), sub, offRow, tabBar(tabs, cur, show), pane);
   show(cur);
 }
@@ -382,11 +390,24 @@ async function viewLesson(id, qs) {
   // 離線影音（P5）：講次的 mp3／m4a／mp4 可以下載到手機；下載過的優先用手機上的，不用網路、不用登入
   const offSpec = key && offCanMedia(key) ? { key, title: `${c.title}｜${l.order ? l.order + ' ' : ''}${l.lesson_title || l.title}`, kind: 'lesson', ref: l.id, driveName: key } : null;
   const offE = offSpec ? await offDone(key) : null;
+  // 影片講次另有同名聲音檔（.mp3／.m4a）：可以選播、下載哪一種（每門課記一個偏好）
+  const altKeys = key && isVideoKey(key) ? altNames(key, l.media.source_file) : [];
+  let alt = null;                                         // { name, size }：雲端硬碟上或手機上有的聲音檔
+  const altOff = altKeys.length ? await offAltDone(key, l.media.source_file) : null;
+  if (altOff) alt = { name: altOff.drive.name, size: altOff.size };
+  else if (altKeys.length && altKeys[0] === l.media.source_file) alt = { name: l.media.source_file, size: 0 };   // 索引記了轉錄用的音檔：先顯示切換，雲端硬碟查不到再收起
+  let src = srcPref(c.id);
+  const wantAudio = () => !!alt && src === 'audio';
   const startAt = async (t) => {
-    const e = offSpec && await offDone(key);
-    if (!e) return openLessonMedia(l, meta, t, isAudio, mediaNote);
+    let audio = wantAudio();
+    let e = await offDone(audio ? alt.name : key);
+    if (!e && !gHasToken()) {   // 沒登入：選的那種沒下載、另一種有，就播有的那種
+      const other = audio ? await offDone(key) : (alt ? await offDone(alt.name) : null);
+      if (other) { e = other; audio = !audio; }
+    }
+    if (!e) return openLessonMedia(l, meta, t, audio || isAudio, mediaNote, audio ? alt.name : key);
     mediaNote.textContent = '';
-    try { await playerOpen(offFile(e), { t, mode: isAudio ? 'audio' : undefined, meta }); const el = playerEl(); if (el) el.play().catch(() => {}); }
+    try { await playerOpen(offFile(e), { t, mode: audio || isAudio ? 'audio' : undefined, meta }); const el = playerEl(); if (el) el.play().catch(() => {}); }
     catch (err) { mediaNote.textContent = '離線播放失敗：' + err.message; }
   };
   playBtn.addEventListener('click', () => startAt(startT || (prog && !prog.completed ? prog.t_s : 0)));
@@ -409,9 +430,27 @@ async function viewLesson(id, qs) {
     fold.setAttribute('aria-pressed', String(off));
   });
   playBtn.hidden = mine();
-  const playable = !!key && (s.enabled || !!offE);
-  if (playable) media.append(h('div', { class: 'lesson-ctl' }, playBtn, rateSel,
-    h('label', { class: 'check follow', for: 'follow', title: '逐字稿跟隨播放' }, followBox, '跟隨'), fold, offSpec ? offButton(offSpec) : null));
+  const playable = !!key && (s.enabled || !!offE || !!altOff);
+  // 下載鈕跟著「影片｜聲音」的選擇換
+  const offSlot = h('span', { class: 'off-slot' });
+  const paintOff = () => {
+    if (!offSpec) return;
+    offSlot.replaceChildren(offButton(wantAudio() ? { ...offSpec, key: alt.name, title: offSpec.title + '（聲音）', driveName: alt.name } : offSpec));
+  };
+  paintOff();
+  // 「影片｜聲音」切換：還沒開始播時才出現（播放中要聽聲音可以改用播放器的聲音模式）
+  const srcRow = h('div', { class: 'seg-tabs src-row', role: 'group', 'aria-label': '播放影片或聲音', hidden: true });
+  const paintSrc = () => {
+    srcRow.replaceChildren(...[['video', '影片'], ['audio', alt && alt.size ? `聲音（${fmtSize(alt.size)}）` : '聲音']].map(([v, name]) =>
+      h('button', { type: 'button', class: 'filter', 'aria-pressed': String((src === 'audio' && alt ? 'audio' : 'video') === v), onclick: () => { src = v; srcSet(c.id, v); paintSrc(); paintOff(); } }, name)));
+    srcRow.hidden = !alt || mine();
+  };
+  if (playable) media.append(srcRow, h('div', { class: 'lesson-ctl' }, playBtn, rateSel,
+    h('label', { class: 'check follow', for: 'follow', title: '逐字稿跟隨播放' }, followBox, '跟隨'), fold, offSlot));
+  if (altKeys.length && s.enabled && gHasToken()) {   // 雲端硬碟上有沒有同名聲音檔：查到再顯示切換（不擋畫面）
+    driveAlt(key, l.media.source_file).then((f) => { if (f) alt = { name: f.name, size: f.size }; else if (!altOff) alt = null; paintSrc(); paintOff(); }).catch(() => {});
+  }
+  paintSrc();
 
   // 分頁：逐字稿｜摘要｜講義｜我的筆記
   const text = l.transcript ? await textOf(l.transcript.md) : null;
@@ -665,7 +704,7 @@ async function viewLesson(id, qs) {
   }
 
   // 播放畫面：這一講的播放器已經在跑（例如從底部小播放器點回來）就借進來；之後才開的，開好會自己借進來
-  PLAYER_SLOT = key ? { name: key, el: slot } : null;
+  PLAYER_SLOT = key ? { name: key, alt: altKeys, el: slot } : null;
   sig.addEventListener('abort', () => { if (PLAYER_SLOT && PLAYER_SLOT.el === slot) PLAYER_SLOT = null; });
   if (mine()) playerAdopt(slot);
   else if (startT && (offE || (s.enabled && gHasToken()))) startAt(startT);   // 從摘要或深連結帶 ?t= 進來：直接開到那一秒
@@ -689,7 +728,8 @@ async function viewLesson(id, qs) {
   back.addEventListener('click', () => { userScrollUntil = 0; const n = pane.querySelector('.seg.active'); if (n) scrollToSeg(n, true); back.hidden = true; });
   const tick = setInterval(() => {
     playBtn.hidden = mine();
-    fold.hidden = !mine() || isAudio;
+    fold.hidden = !mine() || PLAYER.mode === 'audio';
+    srcRow.hidden = !alt || mine();
     if (!mine()) { back.hidden = true; return; }
     const el = playerEl();
     if (Number.isFinite(el.duration)) drawTicks(el.duration);
@@ -826,14 +866,14 @@ function courseSearchBox(only) {
 function asHtml(x) { return typeof x === 'string' ? x : (x && x.html) || ''; }
 
 // 用 media.key 到雲端硬碟找檔，開播放器（帶 meta 才會記進度）
-async function openLessonMedia(l, meta, t, isAudio, note) {
+async function openLessonMedia(l, meta, t, isAudio, note, name = l.media.key) {
   if (!gHasToken() || gMinutesLeft() < RENEW_BEFORE_MIN) {
     return gLogin({ returnHash: location.hash, resume: null }).catch((e) => { note.textContent = e.message; });
   }
   note.textContent = '在雲端硬碟找檔…';
   try {
-    const found = await driveFind(l.media.key, { validate: true });
-    if (!found) { note.textContent = `雲端硬碟上找不到「${l.media.key}」。`; return; }
+    const found = await driveFind(name, { validate: true });
+    if (!found) { note.textContent = `雲端硬碟上找不到「${name}」。`; return; }
     const go = async (f) => {
       note.textContent = '';
       await playerOpen(f, { t, mode: isAudio ? 'audio' : undefined, meta });
