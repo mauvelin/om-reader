@@ -892,8 +892,10 @@ async function viewLane(arg) {
   let docs = all.filter((d) => !isAux(d));
   const aux = all.filter(isAux);
   const pinned = (ui.pinned || []).map((p) => cat.byPath.get(p)).filter((d) => d && d.l === lane);
-  const dated = docs.filter((d) => d.d).length >= docs.length * 0.6;
-  if (dated) docs.sort((a, b) => String(b.d || '').localeCompare(String(a.d || '')) || a.p.localeCompare(b.p));
+  const order = lane === 'wiki/MOC' && (ui.moc_order || []).length ? new Map(ui.moc_order.map((p, i) => [p, i])) : null;
+  const dated = !order && docs.filter((d) => d.d).length >= docs.length * 0.6;
+  if (order) docs.sort((a, b) => (order.get(a.p) ?? 999) - (order.get(b.p) ?? 999) || docTitle(a).localeCompare(docTitle(b), 'zh-Hant'));
+  else if (dated) docs.sort((a, b) => String(b.d || '').localeCompare(String(a.d || '')) || a.p.localeCompare(b.p));
   else docs.sort((a, b) => docTitle(a).localeCompare(docTitle(b), 'zh-Hant'));
   docs = pinned.concat(docs.filter((d) => !pinned.includes(d)));
   const head = h('div', { class: 'doc-head' }, h('h1', null, laneName(lane)));
@@ -907,7 +909,7 @@ async function viewLane(arg) {
     pool = docs.filter((d) => (!state.year || String(d.d || '').startsWith(state.year))
       && (!state.written || lane !== ui.journal_lane || d.w) && (!state.area || (d.areas || [d.ar]).includes(state.area)));
     list.replaceChildren(); shown = 0; add();
-    sub.textContent = `${laneLabel(lane) ? laneLabel(lane) + '・' : ''}${pool.length.toLocaleString()} 則・${dated ? '新到舊' : '依名稱'}`;
+    sub.textContent = `${laneLabel(lane) ? laneLabel(lane) + '・' : ''}${pool.length.toLocaleString()} 則・${order ? '依領域地圖' : dated ? '新到舊' : '依名稱'}`;
   };
   const add = () => {
     for (const d of pool.slice(shown, shown + 100)) list.append(itemLink(d));

@@ -8,6 +8,7 @@
   --dye-stone: #777064;   /* 石灰褐：多日遊站「休息驛站」色，人物（跨領域）用 */
   --ink-madder: #A8463A; --ink-persimmon: #a16130; --ink-apricot: #886d2b; --ink-moss: #5e7946; --ink-indigo: #3F6A94; --ink-mulberry: #6E5A94; --ink-stone: #6b6459;
   --link-line: var(--ink-stone);
+  --sel-bg: #efe9dc; --sel-line: #4a4038;   /* 選中：旅遊站的石頭色系（淺石底＋深石框） */
   --bg: #f8f6f1; --fg: #26262b; --muted: #6b675f; --faint: #8a8478; --card: #ffffff; --line: #e3ded3; --line2: #cec7b9;
   --chip: #f0ece3; --raised: #ffffff; --field-line: #958d80;
   --accent: #6E5A94; --accent-weak: #ece8f2; --warn: #a16130; --danger: #A8463A; --hl: #f1e9d8; --on-color: #ffffff;
@@ -36,6 +37,7 @@
     --dye-stone: #B9B0A1;
     --ink-madder: #D98D7E; --ink-persimmon: #E5A66E; --ink-apricot: #D9BE6A; --ink-moss: #9EBB80; --ink-indigo: #86AFD0; --ink-mulberry: #AD9CCF; --ink-stone: #B9B0A1;
     --link-line: var(--ink-stone);
+    --sel-bg: #35302a; --sel-line: #c9bda8;
     --shadow-card: 0 1px 2px #00000066, 0 4px 14px #00000059;
     --bar-bg: #16171be6;
     --paper: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='260' height='260'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 .22 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
@@ -50,6 +52,7 @@
     --dye-stone: #B9B0A1;
     --ink-madder: #D98D7E; --ink-persimmon: #E5A66E; --ink-apricot: #D9BE6A; --ink-moss: #9EBB80; --ink-indigo: #86AFD0; --ink-mulberry: #AD9CCF; --ink-stone: #B9B0A1;
     --link-line: var(--ink-stone);
+    --sel-bg: #35302a; --sel-line: #c9bda8;
   --shadow-card: 0 1px 2px #00000066, 0 4px 14px #00000059;
   --bar-bg: #16171be6;
   --paper: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='260' height='260'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 .22 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
@@ -180,7 +183,7 @@ h1 { font-size: var(--fs-page); line-height: 1.35; margin: 0 0 var(--sp-2); font
   display: inline-flex; align-items: center; gap: 6px; min-height: var(--hit); padding: 4px 12px; font: inherit; font-size: var(--fs-chip);
   color: var(--fg); background: var(--chip); border: 1px solid transparent; border-radius: var(--r-btn); cursor: pointer;
 }
-.filter[aria-pressed="true"] { color: var(--bg); background: var(--fg); font-weight: var(--fw-strong); }
+.filter[aria-pressed="true"] { color: var(--fg); background: var(--sel-bg); border-color: var(--sel-line); font-weight: var(--fw-strong); }
 .filter .dot { width: 8px; height: 8px; }
 .filter-row { display: flex; gap: 6px; overflow-x: auto; margin: var(--sp-2) calc(-1 * var(--sp-4)) var(--sp-3); padding: 0 var(--sp-4) 2px; scrollbar-width: none; }
 .filter-row::-webkit-scrollbar { display: none; }
