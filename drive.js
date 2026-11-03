@@ -4,7 +4,7 @@
 
 const DRIVE = 'https://www.googleapis.com/drive/v3';
 const DRIVE_UP = 'https://www.googleapis.com/upload/drive/v3';
-const D_FIELDS = 'id,name,mimeType,size,modifiedTime';
+const D_FIELDS = 'id,name,mimeType,size,modifiedTime,md5Checksum';
 const D_FOLDER = 'application/vnd.google-apps.folder';
 let driveCache = null;   // 檔名 → { id, name, size, mime, n（同名幾個）, at }；解密後只在記憶體，上鎖就丟
 LOCK_HOOKS.push(() => { driveCache = null; });
@@ -20,18 +20,48 @@ async function driveCacheSave() { await kvSet('drive-ids', await seal(te.encode(
 const dEsc = (s) => s.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 const driveViewUrl = (id) => `https://drive.google.com/file/d/${encodeURIComponent(id)}/view`;
 
-// 用檔名找（name = '…' and trashed = false）。同名不只一個時取第一個，並在結果的 n 回報有幾個
-async function driveFind(name, { fresh = false } = {}) {
+// 用檔名找（name = '…' and trashed = false），結果加密快取。快取規則（本人 2026-11-03，PDF 改名、重新上傳時）：
+// - 檔名（pdf_key／media.key）變了：快取以檔名為鍵，自然當新檔名重查
+// - validate：開檔前確認快取的 ID 還在、沒進垃圾桶；404 或在垃圾桶就丟掉這筆、用檔名重查一次
+// - 同名不只一個：不自己挑，回傳 { choices } 讓本人選；選好的用 driveChoose 記住
+// - 同一個 ID 內容被換掉：講義 PDF 與影音每次都從雲端硬碟現讀，不快取內容，所以不會拿到舊的
+async function driveFind(name, { fresh = false, validate = false } = {}) {
   const c = await driveCacheLoad();
-  if (!fresh && c[name]) return c[name];
+  let hit = fresh ? null : c[name] || null;
+  if (hit && validate) {
+    try {
+      const f = await (await gfetch(`${DRIVE}/files/${encodeURIComponent(hit.id)}?fields=id,trashed,size,modifiedTime`)).json();
+      if (f.trashed) hit = null; else if (f.size) hit.size = Number(f.size);
+    } catch (e) { if (e.status === 404) hit = null; else throw e; }
+    if (!hit) { delete c[name]; await driveCacheSave(); }
+  }
+  if (hit) return hit;
   const qs = new URLSearchParams({ q: `name = '${dEsc(name)}' and trashed = false`, fields: `files(${D_FIELDS})`, pageSize: '10', spaces: 'drive' });
   const files = (await (await gfetch(`${DRIVE}/files?${qs}`)).json()).files || [];
   if (!files.length) return null;
-  const f = files[0];
-  const hit = { id: f.id, name: f.name, size: Number(f.size || 0), mime: f.mimeType || '', n: files.length, at: Date.now() };
+  const pack = (f) => ({ id: f.id, name: f.name, size: Number(f.size || 0), mime: f.mimeType || '', modified: f.modifiedTime || '' });
+  if (files.length > 1) return { name, choices: files.map(pack) };
+  hit = { ...pack(files[0]), at: Date.now() };
   c[name] = hit;
   await driveCacheSave();
   return hit;
+}
+async function driveChoose(name, f) {
+  const c = await driveCacheLoad();
+  c[name] = { ...f, chosen: true, at: Date.now() };
+  await driveCacheSave();
+  return c[name];
+}
+// 唯讀找資料夾（不建立）：給讀 learn 匯出檔用
+async function driveFolderFind(parts) {
+  let parent = 'root';
+  for (const name of parts) {
+    const qs = new URLSearchParams({ q: `name = '${dEsc(name)}' and mimeType = '${D_FOLDER}' and '${dEsc(parent)}' in parents and trashed = false`, fields: 'files(id)' });
+    const f = ((await (await gfetch(`${DRIVE}/files?${qs}`)).json()).files || [])[0];
+    if (!f) return null;
+    parent = f.id;
+  }
+  return parent;
 }
 async function driveMeta(id) {
   const f = await (await gfetch(`${DRIVE}/files/${encodeURIComponent(id)}?fields=${D_FIELDS}`)).json();

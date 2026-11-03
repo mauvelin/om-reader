@@ -554,6 +554,7 @@ async function viewPage(path) {
   }
   const kids = [head, chips];
   if (actions.childElementCount) kids.push(actions);
+  if (typeof conceptLessonRefs === 'function') { const refs = await conceptLessonRefs(d).catch(() => null); if (refs) kids.push(refs); }
   const nav = docNav(d);
   if (nav) kids.push(nav);
   kids.push(body);

@@ -39,12 +39,15 @@ async function googleSection() {
     const name = q.value.trim();
     if (!name) return;
     try {
-      const f = await driveFind(name, { fresh: true });
-      if (!f) { out.textContent = '雲端硬碟上找不到這個檔名。'; return; }
-      out.textContent = `找到 ${f.mime}，${fmtMB(f.size)}${f.n > 1 ? `；同名有 ${f.n} 個，先用第一個` : ''}。`;
-      found.append(h('div', { class: 'row' },
-        h('button', { type: 'button', class: 'btn primary', onclick: () => playerOpen(f) }, '在 App 裡播放'),
-        h('a', { class: 'btn', href: driveViewUrl(f.id), target: '_blank', rel: 'noopener noreferrer' }, svgIcon('external'), '雲端硬碟')));
+      const hit = await driveFind(name, { fresh: true });
+      if (!hit) { out.textContent = '雲端硬碟上找不到這個檔名。'; return; }
+      const show = (f) => {
+        out.textContent = `找到 ${f.mime}，${fmtMB(f.size)}。`;
+        found.replaceChildren(h('div', { class: 'row' },
+          h('button', { type: 'button', class: 'btn primary', onclick: () => playerOpen(f) }, '在 App 裡播放'),
+          h('a', { class: 'btn', href: driveViewUrl(f.id), target: '_blank', rel: 'noopener noreferrer' }, svgIcon('external'), '雲端硬碟')));
+      };
+      if (hit.choices) driveChooser(hit, found, show); else show(hit);
     } catch (e) { out.textContent = e.status === 401 ? 'Google 登入已過期，請重新登入。' : '查詢失敗：' + e.message; }
   });
   return [...head, h('div', { class: 'card' },

@@ -410,3 +410,13 @@ label.check input { width: 20px; height: 20px; accent-color: var(--accent); }
   .lesson-left .lesson-slot .dock-media video { max-height: 60vh; }
   .lesson-right .seg-tabs { margin-top: var(--sp-3); }
 }
+
+/* P2b-2：主題 → 老師分組、概念、同名檔選單 */
+.sec-title.subject { font-size: 1.05em; color: var(--fg); border-bottom: 2px solid var(--fg); }
+.teacher-head { margin: var(--sp-4) 0 var(--sp-2); font-size: var(--fs-label); font-weight: var(--fw-strong); color: var(--muted); }
+.list a.item .chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.concept-arrow { margin-left: 4px; color: var(--fg); text-decoration: none; }
+.concept-refs h3 { margin: var(--sp-4) 0 var(--sp-1); font-size: 1em; }
+.concept-refs h3 a { color: var(--fg); text-decoration-color: var(--link-line); }
+li.choice { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--sp-2); padding: var(--sp-2) var(--sp-3); }
+li.choice .row { margin: 0; }
