@@ -100,7 +100,9 @@ async function lrec() {
   const r = await kvGet('learn-rec');
   let o = {};
   if (r) { try { o = JSON.parse(td.decode(await open_(r))); } catch (e) { o = {}; } }
-  LREC = { progress: o.progress || {}, recent: o.recent || {}, bookmarks: o.bookmarks || {} };
+  LREC = { progress: o.progress || {}, recent: o.recent || {}, bookmarks: o.bookmarks || {},
+    practice_progress: o.practice_progress || {}, practice_durations: o.practice_durations || {},
+    favorites: o.favorites || {}, practice_log: o.practice_log || {} };
   return LREC;
 }
 let lrecTimer = null;
@@ -113,6 +115,7 @@ function progressSave(meta, el) {
   if (!KEY) return;
   if (!LREC) { lrec().then(() => progressSave(meta, el)).catch(() => {}); return; }
   if (el.readyState < 1 || !Number.isFinite(el.currentTime)) return;
+  if (meta.kind === 'practice') return practiceProgressSave(meta, el);   // 練習影片：practice.js
   const dur = Number.isFinite(el.duration) ? el.duration : 0;
   const prev = LREC.progress[meta.key] || {};
   const now = new Date().toISOString();

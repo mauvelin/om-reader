@@ -430,3 +430,60 @@ li.choice .row { margin: 0; }
 .hc-tabs { margin: 0; }
 .hc-badge { margin-left: 6px; font-size: .78em; color: var(--muted); }
 .hc-other { min-height: 40px; padding: 4px 8px; font: inherit; font-size: 16px; color: var(--fg); background: var(--card); border: 1px solid var(--field-line); border-radius: var(--r-btn); }
+
+/* ── P3 練習層 ── */
+/* 練習風格＝草木染六色的彩虹序（learn 2026-10-21）：Conditioning 茜草紅、Vinyasa 柿橙、Meditation 杏黃、Hatha 苔蘚綠、
+   Restorative 靛青、Nidra 靛紫（靛青與桑葚紫之間）、Yin 桑葚紫；不在六色的用石灰褐 */
+[data-s] { --c: var(--dye-stone); }
+[data-s="Yoga Conditioning"] { --c: var(--dye-madder); } [data-s="Vinyasa Flow"] { --c: var(--dye-persimmon); }
+[data-s="Meditation"] { --c: var(--dye-apricot); } [data-s="Hatha"] { --c: var(--dye-moss); }
+[data-s="Restorative"] { --c: var(--dye-indigo); } [data-s="Yoga Nidra"] { --c: #566294; } [data-s="Yin"] { --c: var(--dye-mulberry); }
+.p-dot { display: inline-block; width: 9px; height: 9px; margin-right: 6px; background: var(--c); vertical-align: 1px; }
+.p-filters { margin: var(--sp-2) 0; }
+.p-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 var(--sp-2); }
+.p-row .filter { min-height: 36px; padding: 4px 10px; }
+.p-energy { display: inline-block; width: 9px; height: 9px; margin-right: 5px; border: 1.5px solid currentColor; box-sizing: border-box; vertical-align: 0; }
+.p-energy[data-e="活力"] { background: currentColor; }
+.p-energy[data-e="平衡"] { background: linear-gradient(to top, currentColor 50%, transparent 50%); }
+.p-star { color: var(--ink-apricot); }
+.list a.item.p-item { display: grid; grid-template-columns: 64px 1fr; gap: 0; padding: 0; }
+.p-spine { display: flex; flex-direction: column; align-items: center; justify-content: center; background: var(--c); color: #fff; min-height: 72px; }
+.p-spine b { font-size: 24px; line-height: 1; }
+.p-spine small { font-size: 11px; opacity: .9; }
+.p-body { display: block; padding: var(--sp-3); min-width: 0; }
+.p-body .t, .p-body .m { display: block; }
+.list a.item.p-item.flash { box-shadow: inset 0 0 0 3px var(--sel-line); }
+.p-lists { list-style: none; padding: 0; margin: 0; }
+.p-lhead { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-start; gap: var(--sp-2); }
+.p-lhead h3 { margin: 0; font-size: 1.02em; }
+.p-strip { display: flex; gap: 2px; height: 8px; margin: var(--sp-2) 0; }
+.p-strip span { background: var(--c); }
+.p-strip span.on { opacity: .35; }
+.p-entries { padding-left: 0; list-style: none; margin: var(--sp-2) 0 0; }
+.p-entries li a { display: grid; grid-template-columns: auto 1fr auto; gap: var(--sp-2); padding: 8px 0; border-top: 1px solid var(--line); color: var(--fg); text-decoration: none; }
+.p-entries li.opened a { color: var(--muted); }
+.p-entries li.next a { font-weight: var(--fw-strong); }
+.p-entries .et small { display: block; color: var(--muted); font-weight: normal; }
+.p-entries .eno, .p-entries .em { color: var(--muted); font-variant-numeric: tabular-nums; }
+.p-logrow { display: flex; align-items: center; }
+.p-logrow a.item { flex: 1; min-width: 0; }
+.doc-head.p-head { padding-left: calc(var(--sp-3) + 2px); box-shadow: inset 4px 0 0 var(--c); }
+.p-notes { color: var(--muted); }
+/* 墊旁模式：播放畫面撐滿，底部大按鈕 */
+body.mat-open .bar, body.mat-open .tabs { visibility: hidden; }
+body.mat-open .p-slot { position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center; background: #000; }
+body.mat-open .p-slot .dock-media, body.mat-open .p-slot video { width: 100%; height: 100%; max-height: none; object-fit: contain; }
+.mat-ui { position: fixed; inset: 0; z-index: 60; display: flex; flex-direction: column; justify-content: space-between; color: #fff; pointer-events: none; }
+.mat-ui > * { pointer-events: auto; background: rgba(0, 0, 0, .55); padding: max(var(--sp-3), env(safe-area-inset-top)) max(var(--sp-4), env(safe-area-inset-right)) var(--sp-3) max(var(--sp-4), env(safe-area-inset-left)); }
+.mat-ui.is-idle > * { opacity: 0; }
+.mat-top { display: flex; align-items: center; gap: var(--sp-3); font-size: 1.1em; }
+.mat-bar { padding-bottom: max(var(--sp-4), env(safe-area-inset-bottom)) !important; }
+.mat-time { display: flex; align-items: center; gap: var(--sp-3); font-size: clamp(18px, 5.5vw, 30px); font-variant-numeric: tabular-nums; }
+.mat-seek { min-width: 0; }
+.mat-seek { flex: 1; height: 10px; accent-color: var(--accent); }
+.mat-ctrls { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-3); margin-top: var(--sp-3); }
+.mat-ui .btn { min-height: 72px; min-width: 72px; font-size: 22px; background: rgba(255, 255, 255, .12); color: #fff; border-color: rgba(255, 255, 255, .35); }
+.mat-ui .btn.primary { background: var(--accent); border-color: var(--accent); }
+.mat-ui .mat-play { min-width: 88px; min-height: 88px; }
+.mat-ui .btn .i { width: 34px; height: 34px; }
+.mat-status { margin: var(--sp-2) 0 0; font-size: 16px; }
