@@ -213,15 +213,15 @@ async function viewPracticeItem(id, qs) {
   const paintFav = () => { favBtn.textContent = isFav(item.id) ? '★ 最愛' : '☆ 加入最愛'; favBtn.setAttribute('aria-pressed', String(isFav(item.id))); };
   favBtn.addEventListener('click', () => { toggleFav(item.id); paintFav(); });
   paintFav();
-  // 練習音檔（kind＝audio）可以下載離線；下載過的優先用手機上的
-  const offSpec = item.kind === 'audio' && item.drive_id ? { key: 'practice:' + item.id, title: item.title, kind: 'practice', ref: item.id, driveId: item.drive_id } : null;
+  // 練習影音都可以下載離線；下載過的優先用手機上的
+  const offSpec = item.drive_id ? { key: 'practice:' + item.id, title: item.title, kind: 'practice', ref: item.id, driveId: item.drive_id } : null;
   const offE = offSpec ? await offDone(offSpec.key) : null;
   const start = async () => {
     const e = offSpec && await offDone(offSpec.key);
     if (e) {
       const p0 = LREC.practice_progress[item.id];
       const t = p0 && p0.duration_s && p0.t_s < p0.duration_s * 0.95 ? p0.t_s : 0;
-      try { await playerOpen(offFile(e), { t, mode: 'audio', meta }); const el = playerEl(); if (el) el.play().catch(() => {}); }
+      try { await playerOpen(offFile(e), { t, mode: item.kind === 'audio' ? 'audio' : undefined, meta }); const el = playerEl(); if (el) el.play().catch(() => {}); }
       catch (err) { status.textContent = '離線播放失敗：' + err.message; }
       return;
     }

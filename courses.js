@@ -277,10 +277,11 @@ async function viewCourseById(id, qs) {
   };
   let cur = qsTab(qs, 'lessons');
   if (!tabs.some((t) => t[0] === cur)) cur = 'lessons';
-  // 有 mp3／m4a 講次的課：整門課一起下載離線（啟用雲端硬碟功能才出現）
-  const offSpecs = c.lessons.filter((l) => l.media && l.media.key && offCanAudio(l.media.key))
+  // 有影音的課：整門課一起下載離線（啟用雲端硬碟功能才出現）
+  const offSpecs = c.lessons.filter((l) => l.media && l.media.key && offCanMedia(l.media.key))
     .map((l) => ({ key: l.media.key, title: `${c.title}｜${l.order ? l.order + ' ' : ''}${l.lesson_title || l.title}`, kind: 'lesson', ref: l.id, driveName: l.media.key }));
-  const offRow = offSpecs.length && (await gSettings()).enabled ? offCourseRow(offSpecs) : null;
+  const allAudio = offSpecs.every((x) => !/\.(mp4|m4v|mov|webm)$/i.test(x.key));
+  const offRow = offSpecs.length && (await gSettings()).enabled ? offCourseRow(offSpecs, allAudio ? '音檔' : '影音') : null;
   setView(head, h('div', { class: 'chips' }, c.category ? areaChip(c.category) : null), sub, offRow, tabBar(tabs, cur, show), pane);
   show(cur);
 }
@@ -376,14 +377,14 @@ async function viewLesson(id, qs) {
   const slot = h('div', { class: 'lesson-slot' });
   const mediaNote = h('div', { class: 'status', role: 'status' });   // div：同名檔的選單也放這裡
   const playBtn = h('button', { type: 'button', class: 'btn primary' }, svgIcon('play'), prog && !prog.completed && prog.t_s > 5 ? `從 ${clock(prog.t_s)} 繼續` : '播放');
-  // 離線音檔（P5）：mp3／m4a 的講次可以下載到手機；下載過的優先用手機上的，不用網路、不用登入
-  const offSpec = key && offCanAudio(key) ? { key, title: `${c.title}｜${l.order ? l.order + ' ' : ''}${l.lesson_title || l.title}`, kind: 'lesson', ref: l.id, driveName: key } : null;
+  // 離線影音（P5）：講次的 mp3／m4a／mp4 可以下載到手機；下載過的優先用手機上的，不用網路、不用登入
+  const offSpec = key && offCanMedia(key) ? { key, title: `${c.title}｜${l.order ? l.order + ' ' : ''}${l.lesson_title || l.title}`, kind: 'lesson', ref: l.id, driveName: key } : null;
   const offE = offSpec ? await offDone(key) : null;
   const startAt = async (t) => {
     const e = offSpec && await offDone(key);
     if (!e) return openLessonMedia(l, meta, t, isAudio, mediaNote);
     mediaNote.textContent = '';
-    try { await playerOpen(offFile(e), { t, mode: 'audio', meta }); const el = playerEl(); if (el) el.play().catch(() => {}); }
+    try { await playerOpen(offFile(e), { t, mode: isAudio ? 'audio' : undefined, meta }); const el = playerEl(); if (el) el.play().catch(() => {}); }
     catch (err) { mediaNote.textContent = '離線播放失敗：' + err.message; }
   };
   playBtn.addEventListener('click', () => startAt(startT || (prog && !prog.completed ? prog.t_s : 0)));

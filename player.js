@@ -15,7 +15,7 @@ let PLAYER_SLOT = null;   // 講次頁登記的位置：{ name（雲端硬碟檔
 const RATES = ['0.75', '1', '1.25', '1.5', '1.75', '2'];
 const playerRate = () => { try { return localStorage.getItem('om-rate') || '1'; } catch (e) { return '1'; } };
 const playerEl = () => (PLAYER ? (PLAYER.mode === 'audio' ? PLAYER.a : PLAYER.v) : null);
-// 來源：雲端串流 drive-media/<雲端硬碟 ID>；下載過的離線音檔 offline-media/<隨機 ID>（offline.js）
+// 來源：雲端串流 drive-media/<雲端硬碟 ID>；下載過的離線影音 offline-media/<隨機 ID>（offline.js）
 const playerSrc = (file) => (file.offline ? 'offline-media/' + encodeURIComponent(file.offline) : 'drive-media/' + encodeURIComponent(file.id));
 
 function dockShow(...kids) {
@@ -35,9 +35,9 @@ function playerClose() {
 // 開一個雲端硬碟檔：file＝{ id, name, size, mime }（size 一定要有：Drive 的回應不公開 Content-Range，SW 要自己補）
 async function playerOpen(file, { t = 0, mode, resumed = false, meta = null } = {}) {
   const s = await gSettings();
-  if (!s.enabled && !file.offline) return;   // 離線音檔不需要 Google
+  if (!s.enabled && !file.offline) return;   // 離線影音不需要 Google
   if (PLAYER) playerClose();
-  mode = file.offline ? 'audio' : mode || (/^audio\//.test(file.mime || '') ? 'audio' : 'video');
+  mode = mode || (/^audio\//.test(file.mime || '') ? 'audio' : 'video');
   const head = h('div', { class: 'dock-head' }, h('span', { class: 'dock-title' }, file.name || '雲端硬碟檔案'),
     h('button', { type: 'button', class: 'btn quiet', onclick: playerClose }, '關閉'));
   if (!file.offline && (!gHasToken() || gMinutesLeft() < RENEW_BEFORE_MIN)) {   // 開播前先續期，播到一半才不會斷
@@ -57,7 +57,7 @@ async function playerOpen(file, { t = 0, mode, resumed = false, meta = null } = 
   const modeBtn = h('button', { type: 'button', class: 'btn' });
   const paintMode = () => {
     modeBtn.textContent = PLAYER.mode === 'audio' ? '改回影片' : '聲音模式（可在背景播）';
-    modeBtn.hidden = !!PLAYER.file.offline;   // 離線音檔只有聲音
+    modeBtn.hidden = !!PLAYER.file.offline && /^audio\//.test(PLAYER.file.mime || '');   // 離線的聲音檔沒有影片可切
     v.hidden = PLAYER.mode === 'audio';
     a.hidden = PLAYER.mode !== 'audio';
   };

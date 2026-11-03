@@ -50,7 +50,7 @@ function db() {
       // files：資料包內路徑 → { size, iv, ct }（加密內容）
       // shas ：資料包內路徑 → git blob sha（小，差異比對只讀這個，不碰加密內容）
       // kv   ：設定（token 加密）、開啟鎖、同步狀態
-      // media：離線音檔，<隨機 ID>:<塊序號> → { iv, ct }（每個檔自己的金鑰加密，offline.js）
+      // media：離線影音，<隨機 ID>:<塊序號> → { iv, ct }（每個檔自己的金鑰加密，offline.js）
     };
     r.onsuccess = () => { r.result.onversionchange = () => { r.result.close(); dbp = null; }; resolve(r.result); };
     r.onerror = () => reject(r.error);
