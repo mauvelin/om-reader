@@ -2,9 +2,55 @@
 'use strict';
 
 async function wipeAll() {
+  playerClose();
+  gForget();
   lockNow();
   const d = await db(); d.close(); dbp = null;
   await new Promise((res) => { const r = indexedDB.deleteDatabase(DB_NAME); r.onsuccess = r.onerror = r.onblocked = res; });
+}
+
+// 雲端硬碟影音（實驗中，預設關閉）：啟用、用戶端 ID、登入狀態、用檔名找一支來播
+async function googleSection() {
+  const s = await gSettings();
+  const out = h('p', { class: 'status', role: 'status' });
+  if (G.lastReturn) { out.textContent = G.lastReturn.ok ? 'Google 登入成功。' : '登入沒有成功：' + G.lastReturn.error; G.lastReturn = null; }
+  const enable = h('input', { type: 'checkbox', id: 'g-enable' });
+  enable.checked = s.enabled;
+  enable.addEventListener('change', async () => { await gSaveSettings({ enabled: enable.checked }); if (!enable.checked) { playerClose(); gForget(); } route(); });
+  const head = [secTitle('雲端硬碟影音（實驗中）'),
+    h('label', { class: 'check', for: 'g-enable' }, enable, '啟用：在 App 裡播放雲端硬碟的影片與聲音')];
+  if (!s.enabled) return [...head, h('p', { class: 'muted' }, '預設關閉。啟用後才會出現 Google 登入與播放器；關閉時會丟掉記憶體裡的 Google 登入。')];
+  const client = h('input', { id: 'g-client', type: 'text', autocomplete: 'off', autocapitalize: 'off', spellcheck: 'false',
+    placeholder: s.client ? '（已存，留空表示不變）' : '….apps.googleusercontent.com' });
+  const saveBtn = h('button', { type: 'button', class: 'btn' }, '儲存用戶端 ID');
+  saveBtn.addEventListener('click', async () => {
+    const v = client.value.trim();
+    if (!/\.apps\.googleusercontent\.com$/.test(v)) { out.textContent = '用戶端 ID 應該以 .apps.googleusercontent.com 結尾。'; return; }
+    await gSaveSettings({ client: v }); client.value = ''; out.textContent = '已儲存（加密存在這支手機）。';
+  });
+  const loginBtn = h('button', { type: 'button', class: 'btn primary' }, gHasToken() ? '重新登入 Google' : '登入 Google');
+  loginBtn.addEventListener('click', () => gLogin({ returnHash: '#/settings' }).catch((e) => { out.textContent = e.message; }));
+  const state = h('p', { class: 'muted' }, gHasToken() ? `已登入，約 ${gMinutesLeft()} 分鐘後失效。` : '尚未登入（登入約一小時失效，只存在記憶體）。');
+  const q = h('input', { id: 'g-q', type: 'text', autocomplete: 'off', autocapitalize: 'off', spellcheck: 'false', placeholder: '雲端硬碟上的檔名，例如 …｜00.01.課程介紹.mp4' });
+  const found = h('div');
+  const findBtn = h('button', { type: 'button', class: 'btn' }, '找');
+  findBtn.addEventListener('click', async () => {
+    found.replaceChildren();
+    const name = q.value.trim();
+    if (!name) return;
+    try {
+      const f = await driveFind(name, { fresh: true });
+      if (!f) { out.textContent = '雲端硬碟上找不到這個檔名。'; return; }
+      out.textContent = `找到 ${f.mime}，${fmtMB(f.size)}${f.n > 1 ? `；同名有 ${f.n} 個，先用第一個` : ''}。`;
+      found.append(h('div', { class: 'row' },
+        h('button', { type: 'button', class: 'btn primary', onclick: () => playerOpen(f) }, '在 App 裡播放'),
+        h('a', { class: 'btn', href: driveViewUrl(f.id), target: '_blank', rel: 'noopener noreferrer' }, svgIcon('external'), '雲端硬碟')));
+    } catch (e) { out.textContent = e.status === 401 ? 'Google 登入已過期，請重新登入。' : '查詢失敗：' + e.message; }
+  });
+  return [...head, h('div', { class: 'card' },
+    h('div', { class: 'field' }, h('label', { for: 'g-client' }, 'OAuth 用戶端 ID'), client), h('div', { class: 'row' }, saveBtn),
+    state, h('div', { class: 'row' }, loginBtn),
+    h('div', { class: 'field' }, h('label', { for: 'g-q' }, '測試：用檔名找一支來播'), q), h('div', { class: 'row' }, findBtn), found, out)];
 }
 
 async function viewSettings() {
@@ -93,6 +139,7 @@ async function viewSettings() {
       h('div', { class: 'field' }, h('label', { for: 'cfg-repo' }, '資料 repo（擁有者/名稱）'), repo),
       h('div', { class: 'field' }, h('label', { for: 'cfg-token' }, '唯讀 token'), token),
       h('div', { class: 'row' }, checkBtn), out, choice, prog, quota),
+    ...(await googleSection()),
     secTitle('這支手機'), h('div', { class: 'card' }, info),
     h('p', { class: 'muted' }, '只下載有變動的檔。repo 名稱與 token 只存在這支手機，token 與所有資料都以 Face ID 導出的金鑰加密。token 到期後在這裡貼上新的即可。'),
     h('div', { class: 'row' }, lockBtn, clearBtn));
@@ -202,5 +249,6 @@ $('#theme').addEventListener('click', () => {
   applyTheme(themeNow);
 });
 
+gTakeReturn();   // 從 Google 登入跳回來：先把 # 後面的 token 取下，路由才不會把它當成頁面
 route();
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});

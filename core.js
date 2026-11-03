@@ -176,17 +176,29 @@ async function unlock() {
   try { if (td.decode(await open_(lock.check, key)) !== 'om-reader-ok') throw new Error(); }
   catch (e) { throw new Error('金鑰不符：這把通行金鑰不是當初設定的那一把'); }
   KEY = key;
+  for (const f of UNLOCK_HOOKS) { try { await f(); } catch (e) { /* 單一模組失敗不擋解鎖 */ } }
   setTimeout(checkUpdates, 1500);
 }
+// 其他模組在上鎖／解鎖時要做的事（例：雲端硬碟模組清掉記憶體裡解密過的檔名快取；登入回來後接回原頁）
+const LOCK_HOOKS = [];
+const UNLOCK_HOOKS = [];
 function lockNow() {
   KEY = null;
   resetCaches();   // 也清掉返回快取：上鎖後畫面上不留任何解密過的內容
   releaseBlobUrls();
+  for (const f of LOCK_HOOKS) { try { f(); } catch (e) { /* 略過 */ } }
 }
+// 背景超過 5 分鐘就上鎖；但播放中不計時，暫停或停止之後才開始算（播放元件提供 mediaIdleSince）
 let hiddenAt = 0;
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'hidden') { hiddenAt = Date.now(); return; }
-  if (KEY && hiddenAt && Date.now() - hiddenAt > LOCK_AFTER_MS) { lockNow(); route(); }
+  if (document.visibilityState === 'hidden') {
+    hiddenAt = Date.now();
+    if (typeof mediaOnHide === 'function') mediaOnHide();
+    return;
+  }
+  if (!KEY || !hiddenAt) return;
+  const idleFrom = typeof mediaIdleSince === 'function' ? mediaIdleSince(hiddenAt) : hiddenAt;
+  if (idleFrom != null && Date.now() - idleFrom > LOCK_AFTER_MS) { lockNow(); route(); }
 });
 async function getConfig() {
   const c = (await kvGet('config')) || {};

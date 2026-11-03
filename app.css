@@ -321,3 +321,19 @@ iframe.htmlview.full { position: fixed; inset: 0; width: 100vw; height: 100dvh; 
 .file-ext { width: 56px; height: 64px; border: 1px solid var(--line2); display: flex; align-items: flex-end; justify-content: center; padding-bottom: 8px; font-size: var(--fs-label); font-weight: var(--fw-strong); color: var(--muted); background: var(--bg); }
 .file-meta .t { font-weight: var(--fw-strong); overflow-wrap: anywhere; }
 a.update-note { display: block; color: var(--fg); text-decoration: none; margin-bottom: var(--sp-3); box-shadow: inset 4px 0 0 var(--accent); background: var(--accent-weak); }
+
+/* 雲端硬碟影音：播放器固定在底部分頁列上方，放在 #view 之外（換頁、上鎖都不拆）；上鎖時看不到、聲音照播 */
+.dock {
+  position: fixed; left: 0; right: 0; z-index: 9; bottom: calc(54px + env(safe-area-inset-bottom));
+  max-width: var(--w-prose); margin: 0 auto; padding: var(--sp-2) var(--sp-3);
+  background: var(--card); border: 1px solid var(--line2); border-bottom: 0; box-shadow: var(--shadow-card);
+}
+.dock-head { display: flex; align-items: center; gap: var(--sp-2); }
+.dock-title { flex: 1; min-width: 0; font-size: var(--fs-chip); font-weight: var(--fw-strong); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dock-media video { display: block; width: 100%; max-height: 34vh; background: #000; }
+.dock-media audio { display: block; width: 100%; }
+.dock .row { margin: var(--sp-2) 0 0; }
+body.has-dock main { padding-bottom: calc(80px + 42vh + env(safe-area-inset-bottom)); }
+body.locked .dock { visibility: hidden; }
+label.check { display: flex; align-items: center; gap: var(--sp-2); min-height: var(--hit); }
+label.check input { width: 20px; height: 20px; accent-color: var(--accent); }
