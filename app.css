@@ -337,3 +337,43 @@ body.has-dock main { padding-bottom: calc(80px + 42vh + env(safe-area-inset-bott
 body.locked .dock { visibility: hidden; }
 label.check { display: flex; align-items: center; gap: var(--sp-2); min-height: var(--hit); }
 label.check input { width: 20px; height: 20px; accent-color: var(--accent); }
+
+/* ── 課程層（P2a）：課程頁、講次頁 ── */
+.seg-tabs { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin: var(--sp-4) 0 var(--sp-3); }
+.tab-pane { min-height: 30vh; }
+.chapter-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); margin: var(--sp-5) 0 var(--sp-2); padding-bottom: 6px;
+  border-bottom: 1px solid var(--line); font-size: var(--fs-label); font-weight: var(--fw-strong); color: var(--muted); }
+.chip-link { font-weight: normal; color: var(--fg); text-decoration: underline; text-decoration-color: var(--link-line); text-underline-offset: 3px; }
+.list a.item.lesson-row { display: grid; grid-template-columns: 1fr auto; column-gap: var(--sp-3); align-items: center; }
+.list a.item.lesson-row .t { grid-column: 1; }
+.list a.item.lesson-row .m { grid-column: 1; }
+.list a.item.lesson-row .done, .list a.item.lesson-row .pct { grid-column: 2; grid-row: 1 / span 2; font-variant-numeric: tabular-nums; }
+.lesson-row .done { color: var(--ink-moss); font-weight: var(--fw-strong); font-size: 1.1em; }
+.lesson-row .pct { color: var(--muted); font-size: var(--fs-chip); }
+.lesson-media { margin: var(--sp-3) 0; }
+.lesson-slot { position: sticky; top: 62px; z-index: 5; background: var(--bg); }
+.lesson-slot .dock-media video { max-height: 38vh; }
+.lesson-slot:empty { display: none; }
+.rate-row { display: flex; flex-wrap: wrap; gap: 6px; margin: var(--sp-2) 0; }
+.rate-row .filter { min-height: 36px; padding: 4px 10px; font-variant-numeric: tabular-nums; }
+/* learn 的逐字稿：每段一個時間鈕＋文字；播放到的那段淡石底 */
+.md.learn .seg, .md.learn .seg-cont { margin: 0 0 .7em; padding: 4px 8px; scroll-margin-top: 45vh; }
+.md.learn .seg.gap { color: var(--muted); }
+.md.learn .seg.active, .md.learn .seg-cont.active { background: var(--sel-bg); box-shadow: inset 3px 0 0 var(--sel-line); }
+.md.learn .ts, .summary .ts, .digest .ts {
+  display: inline-block; margin: 0 .5em 0 0; padding: 0 5px; font: inherit; font-size: var(--fs-label); font-variant-numeric: tabular-nums;
+  color: var(--muted); background: var(--chip); border: 0; border-radius: var(--r-btn); cursor: pointer; text-decoration: none; vertical-align: 1px;
+}
+.md.learn .ts:disabled, .summary .ts:disabled { cursor: default; opacity: .7; }
+.summary-gist { font-weight: var(--fw-strong); line-height: 1.7; }
+.summary-section h4 { margin: var(--sp-4) 0 var(--sp-1); font-size: var(--fs-label); color: var(--muted); }
+.summary-items { list-style: none; padding: 0; margin: 0; }
+.summary-items li { padding: 6px 8px; line-height: 1.65; }
+.summary-items li.active { background: var(--sel-bg); box-shadow: inset 3px 0 0 var(--sel-line); }
+.digest-lesson { border-bottom: 1px solid var(--line); padding: var(--sp-3) 0; }
+.digest-lesson h3 { margin: 0 0 var(--sp-2); font-size: 1.02em; }
+.digest-lesson h3 a { color: var(--fg); }
+.handout { border-top: 1px solid var(--line); padding-top: var(--sp-3); margin-top: var(--sp-3); }
+.handout h3 { margin: 0 0 var(--sp-2); }
+.btn.back-current { position: fixed; right: max(var(--sp-4), env(safe-area-inset-right)); bottom: calc(70px + env(safe-area-inset-bottom)); z-index: 11;
+  background: var(--card); box-shadow: var(--shadow-card); }

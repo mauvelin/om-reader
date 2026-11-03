@@ -3,9 +3,9 @@
 // 殼層靜態檔 cache-first；跨網域請求（api.github.com）完全不經手。
 // 殼層檔案有改，CACHE_VERSION 往前推一號。
 // 另外代理同源的 drive-media/<檔案 ID>：帶上記憶體裡的 Google token 與 Range 轉給 Drive API（見檔尾）。
-const CACHE_VERSION = 'om-reader-v13';
-const SHELL = ['./', './index.html', './theme.js', './core.js', './google.js', './drive.js', './player.js', './reader.js', './app.js', './app.css', './viewer.html', './viewer.js',
-  './vendor/markdown-it.min.js', './vendor/purify.min.js', './manifest.webmanifest',
+const CACHE_VERSION = 'om-reader-v14';
+const SHELL = ['./', './index.html', './theme.js', './core.js', './google.js', './drive.js', './player.js', './reader.js', './courses.js', './app.js', './app.css', './viewer.html', './viewer.js',
+  './vendor/markdown-it.min.js', './vendor/purify.min.js', './vendor/learn-text.js', './manifest.webmanifest',
   './icons/icon-180.png', './icons/icon-192.png', './icons/icon-512.png', './icons/favicon-32.png', './icons/mark.png', './icons/mark-center.png'];
 
 self.addEventListener('install', (event) => {

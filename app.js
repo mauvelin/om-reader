@@ -192,6 +192,8 @@ async function route() {
     else if (hash.startsWith('#/history')) await viewHistory();
     else if (hash.startsWith('#/p/')) await viewPage(dec(hash.slice(4)));
     else if (hash.startsWith('#/l/')) await viewLane(dec(hash.slice(4)));
+    else if (hash.startsWith('#/course/')) { const [id, qs] = hash.slice(9).split('?'); await viewCourseById(decodeURIComponent(id), qs); }
+    else if (hash.startsWith('#/lesson/')) { const [id, qs] = hash.slice(9).split('?'); await viewLesson(decodeURIComponent(id), qs); }
     else if (hash.startsWith('#/c/')) await viewCourse(+hash.slice(4));
     else if (hash.startsWith('#/s/')) await viewSearch(decodeURIComponent(hash.slice(4)));
     else if (hash.startsWith('#/settings')) await viewSettings();
@@ -210,10 +212,10 @@ $('#qform').addEventListener('submit', (e) => {
 let navDepth = 0;
 window.addEventListener('hashchange', () => { navDepth++; route(); });
 function updateChrome(hash, locked) {
-  const deep = /^#\/(p|l|s|c)\//.test(hash);
+  const deep = /^#\/(p|l|s|c|course|lesson)\//.test(hash);
   $('#back').hidden = locked || !deep || navDepth === 0;
   $('#brand').hidden = !$('#back').hidden;
-  const tab = hash.startsWith('#/browse') || hash.startsWith('#/l/') || hash.startsWith('#/c/') ? 'browse'
+  const tab = hash.startsWith('#/browse') || hash.startsWith('#/l/') || hash.startsWith('#/c/') || hash.startsWith('#/course/') || hash.startsWith('#/lesson/') ? 'browse'
     : hash.startsWith('#/history') ? 'history'
       : hash.startsWith('#/settings') ? 'settings'
         : hash.startsWith('#/p/') || hash.startsWith('#/s/') ? null : 'home';

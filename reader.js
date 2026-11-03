@@ -285,7 +285,12 @@ async function savePos(p, y) {
 }
 
 /* ════════ 畫面 ════════ */
+// 每個畫面一個 AbortController：畫面換掉時，掛在播放器或 window 上的監聽一併拿掉
+let viewAbort = new AbortController();
 function setView(...kids) {
+  if (typeof playerRelease === 'function') playerRelease();   // 借進頁面的播放畫面先還回底部
+  viewAbort.abort();
+  viewAbort = new AbortController();
   view.replaceChildren(...kids.filter((k) => k != null));
   window.scrollTo(0, 0);
 }
@@ -294,6 +299,7 @@ const viewCache = new Map();
 let curHash = null;
 const CACHEABLE = /^#\/(p|l|s|c)\/|^#\/browse/;
 function stashView() {
+  if (typeof playerRelease === 'function') playerRelease();
   if (curHash && curHash.startsWith('#/p/') && KEY) savePos(dec(curHash.slice(4)), window.scrollY).catch(() => {});
   if (curHash && CACHEABLE.test(curHash) && view.childNodes.length) {
     viewCache.delete(curHash);
@@ -339,6 +345,7 @@ async function viewHome() {
   // 繼續看
   const hist = (await getHistory()).map((x) => cat.byPath.get(x.p)).filter(Boolean).slice(0, 3);
   if (hist.length) kids.push(secTitle('繼續看', '#/history', '全部'), listOf(hist.map((d) => itemLink(d, null, { resume: true }))));
+  if (typeof continueSection === 'function') kids.push(...await continueSection().catch(() => []));
   // 領域地圖：讀 catalog.ui.home_map 指定的頁面裡「### 名稱 → [[頁面]] 說明」的行
   const idx = ui.home_map ? cat.byPath.get(ui.home_map) : null;
   if (idx) {
@@ -387,24 +394,6 @@ async function viewBrowse() {
     if (g.name === '/') kids.push(h('details', { class: 'aux' }, h('summary', null, `/（repo 根目錄下的資料夾，${lanes.length} 個）`), rows));
     else kids.push(secTitle(g.name), rows);
   }
-  setView(...kids);
-}
-
-async function viewCourse(ci) {
-  const cat = await catalog();
-  if (!cat) return emptyState();
-  const c = ((cat.ui && cat.ui.courses) || [])[ci];
-  if (!c) return setView(h('h1', null, '找不到這門課'));
-  const head = areaColor(h('div', { class: 'doc-head' }, h('nav', { class: 'crumb' }, h('a', { href: '#/l/' + enc('self/resources') }, 'self/resources')), h('h1', null, c.t)), null, c.cat);
-  const kids = [head, h('div', { class: 'chips' }, c.cat ? areaChip(c.cat) : null, h('span', { class: 'tag' }, `${c.lessons.length} 講`))];
-  if (c.digests.length) kids.push(secTitle('課程摘錄'), listOf(c.digests.map((p) => cat.byPath.get(p)).filter(Boolean).map((x) => itemLink(x))));
-  if (c.notes.length) kids.push(secTitle('我的筆記'), listOf(c.notes.map((p) => cat.byPath.get(p)).filter(Boolean).map((x) => itemLink(x))));
-  kids.push(secTitle('逐字稿'), h('ol', { class: 'list lessons' }, c.lessons.map((l) => {
-    const d = cat.byPath.get(l.p);
-    return h('li', null, h('a', { class: 'item', href: pageHref(l.p) }, h('span', { class: 't' }, `${l.o ? l.o + '　' : ''}${l.t}`),
-      h('span', { class: 'm' }, l.ho.length ? `有講義・${d && d.n ? Math.round(d.n / 1000) + 'k 字' : ''}` : (d && d.n ? Math.round(d.n / 1000) + 'k 字' : ''))));
-  })));
-  if (c.handouts.length) kids.push(h('details', { class: 'aux' }, h('summary', null, `講義（${c.handouts.length}）`), listOf(c.handouts.map((p) => cat.byPath.get(p)).filter(Boolean).map((x) => itemLink(x)))));
   setView(...kids);
 }
 
@@ -484,22 +473,6 @@ async function viewLane(arg) {
   apply();
 }
 // 學習筆記：照既有的課程索引（_courses.json）分課程，課程內照講次
-function viewCourses(cat, lane) {
-  const cs = cat.ui.courses;
-  const byCat = new Map();
-  cs.forEach((c, i) => { const k = c.cat || '其他'; if (!byCat.has(k)) byCat.set(k, []); byCat.get(k).push([c, i]); });
-  const inCourse = new Set(cs.flatMap((c) => [...c.lessons.map((l) => l.p), ...c.handouts, ...c.notes]));
-  const loose = cat.docs.filter((d) => d.l === lane && d.s != null && !inCourse.has(d.p) && !isAux(d));
-  const kids = [h('div', { class: 'doc-head' }, h('h1', null, laneName(lane))), h('p', { class: 'page-sub' }, `${laneLabel(lane) ? laneLabel(lane) + '・' : ''}${cs.length} 門課・${cs.reduce((n, c) => n + c.lessons.length, 0)} 講・依課程`)];
-  for (const [k, list] of [...byCat].sort((a, b) => b[1].length - a[1].length)) {
-    kids.push(h('div', { class: 'sec-title' }, h('span', null, areaColor(h('span', { class: 'sec-dot' }), null, k), k)),
-      listOf(list.map(([c, i]) => h('li', null, areaColor(h('a', { class: 'item', href: '#/c/' + i }, h('span', { class: 't' }, c.t),
-        h('span', { class: 'm' }, `${c.lessons.length} 講${c.handouts.length ? `・講義 ${c.handouts.length}` : ''}${c.notes.length ? `・我的筆記 ${c.notes.length}` : ''}`)), null, c.cat)))));
-  }
-  if (loose.length) kids.push(h('details', { class: 'aux' }, h('summary', null, `不屬於任何課程（${loose.length}）`), listOf(loose.map((d) => itemLink(d)))));
-  kids.push(h('p', { class: 'muted more' }, h('a', { href: '#/l/' + enc(lane) + '?all=1' }, '改看全部檔案清單')));
-  setView(...kids);
-}
 
 // iPhone 實測：www.notion.so 的連結會直接叫起 Notion App（2026-11-02）
 const notionUrl = (nid) => `https://www.notion.so/${nid}`;
@@ -651,6 +624,8 @@ function docNav(d) {
     row.append(prev ? h('a', { class: 'btn', href: pageHref(prev.p), 'aria-label': `上一講 ${prev.o || ''}` }, svgIcon('back'), prev.o || '上一講') : h('span'),
       h('a', { class: 'btn quiet', href: '#/c/' + cs.ci }, '課程目錄'),
       next ? h('a', { class: 'btn', href: pageHref(next.p), 'aria-label': `下一講 ${next.o || ''}` }, next.o || '下一講', svgIcon('chev')) : h('span'));
+    const lp = typeof lessonLinkFor === 'function' ? lessonLinkFor(d.p) : null;
+    if (lp) row.append(h('a', { class: 'btn primary', href: lp }, '講次頁（播放＋逐字稿）'));
     const lesson = cs.kind === 'lesson' ? cs.c.lessons[cs.li] : null;
     if (lesson && lesson.ho.length) row.append(...lesson.ho.map((p, i) => h('a', { class: 'btn quiet', href: pageHref(p) }, lesson.ho.length > 1 ? `講義 ${i + 1}` : '講義')));
     return row;

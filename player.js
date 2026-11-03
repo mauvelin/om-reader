@@ -3,12 +3,17 @@
 // 聲音模式＝用 <audio> 播同一個檔：iPhone 一進背景就會暫停 <video>，<audio> 可以繼續播，鎖定畫面用 Media Session 控制。
 // 播放器放在 #view 之外：換頁、上鎖都不拆它；上鎖時畫面蓋上鎖定頁、聲音照播。
 // token 策略（本人 2026-11-03 定）：開播前剩不到 15 分鐘先續期；播放中收到 401 就記下位置、跳去登入、回來自動接回。
+// 講次頁會把播放畫面「借」進頁面裡（playerAdopt）；換頁或上鎖前一律還回底部（playerRelease），聲音不中斷。
+// 從講次頁開的播放帶 meta（media.key、講次、課程），播放中每 5 秒、暫停、播完時記進度（courses.js 的 progressSave）。
 'use strict';
 
 const RENEW_BEFORE_MIN = 15;
 const dock = h('section', { class: 'dock', hidden: true, 'aria-label': '播放器' });
 document.body.append(dock);
-let PLAYER = null;   // { file, mode: 'video'|'audio', v, a, hide, wantLogin }
+let PLAYER = null;   // { file, mode: 'video'|'audio', v, a, box, host, adopted, meta, positioned, hide, wantLogin, lastT }
+let PLAYER_SLOT = null;   // 講次頁登記的位置：{ name（雲端硬碟檔名＝media.key）, el }；同一個檔開起來就借進去
+const RATES = ['0.75', '1', '1.25', '1.5', '1.75', '2'];
+const playerRate = () => { try { return localStorage.getItem('om-rate') || '1'; } catch (e) { return '1'; } };
 const playerEl = () => (PLAYER ? (PLAYER.mode === 'audio' ? PLAYER.a : PLAYER.v) : null);
 const playerSrc = (id) => 'drive-media/' + encodeURIComponent(id);
 
@@ -27,7 +32,7 @@ function playerClose() {
 }
 
 // 開一個雲端硬碟檔：file＝{ id, name, size, mime }（size 一定要有：Drive 的回應不公開 Content-Range，SW 要自己補）
-async function playerOpen(file, { t = 0, mode, resumed = false } = {}) {
+async function playerOpen(file, { t = 0, mode, resumed = false, meta = null } = {}) {
   const s = await gSettings();
   if (!s.enabled) return;
   if (PLAYER) playerClose();
@@ -36,7 +41,7 @@ async function playerOpen(file, { t = 0, mode, resumed = false } = {}) {
     h('button', { type: 'button', class: 'btn quiet', onclick: playerClose }, '關閉'));
   if (!gHasToken() || gMinutesLeft() < RENEW_BEFORE_MIN) {   // 開播前先續期，播到一半才不會斷
     const go = h('button', { type: 'button', class: 'btn primary' }, gHasToken() ? '先續期 Google 登入再播' : '登入 Google 再播');
-    go.addEventListener('click', () => gLogin({ returnHash: location.hash, resume: { file, t, mode } }).catch((e) => { note.textContent = e.message; }));
+    go.addEventListener('click', () => gLogin({ returnHash: location.hash, resume: { file, t, mode, meta } }).catch((e) => { note.textContent = e.message; }));
     const note = h('p', { class: 'status' }, gHasToken() ? `登入只剩 ${gMinutesLeft()} 分鐘，播到一半會斷。` : 'Google 登入約一小時失效，需要重新登入。');
     dockShow(head, note, h('div', { class: 'row' }, go, h('a', { class: 'btn', href: driveViewUrl(file.id), target: '_blank', rel: 'noopener noreferrer' }, svgIcon('external'), '雲端硬碟')));
     return;
@@ -45,7 +50,8 @@ async function playerOpen(file, { t = 0, mode, resumed = false } = {}) {
   gTellSW();
   const v = h('video', { controls: true, playsinline: true, preload: 'metadata' });
   const a = h('audio', { controls: true, preload: 'metadata' });
-  PLAYER = { file, mode, v, a, hide: null, wantLogin: false, lastT: t };   // lastT：最後一個可靠的播放位置（重新載入時 currentTime 會先歸零）
+  // lastT：最後一個可靠的播放位置（重新載入時 currentTime 會先歸零）；positioned：拿到長度並套用起始位置之後才記進度
+  PLAYER = { file, mode, v, a, box: null, host: null, adopted: null, meta, positioned: false, hide: null, wantLogin: false, lastT: t };
   const note = h('p', { class: 'status', role: 'status' }, resumed ? `已重新登入，接回 ${fmtClock(t)}，按播放繼續。` : '');
   const modeBtn = h('button', { type: 'button', class: 'btn' });
   const paintMode = () => {
@@ -58,18 +64,51 @@ async function playerOpen(file, { t = 0, mode, resumed = false } = {}) {
     el.addEventListener('playing', setupMediaSession);
     el.addEventListener('timeupdate', () => { if (PLAYER && el === playerEl() && el.readyState >= 1) PLAYER.lastT = el.currentTime; });
     el.addEventListener('error', () => { if (el === playerEl()) note.textContent = `播放失敗（錯誤碼 ${el.error && el.error.code}）。可改用「雲端硬碟」開啟。`; });
+    el.addEventListener('loadedmetadata', () => { el.playbackRate = Number(playerRate()) || 1; });
+    el.addEventListener('pause', () => playerProgress(el));
+    el.addEventListener('ended', () => playerProgress(el));
   }
-  dockShow(head, h('div', { class: 'dock-media' }, v, a), note,
+  PLAYER.box = h('div', { class: 'dock-media' }, v, a);
+  PLAYER.host = h('div', { class: 'dock-host' }, PLAYER.box);
+  dockShow(head, PLAYER.host, note,
     h('div', { class: 'row' }, modeBtn, h('a', { class: 'btn', href: driveViewUrl(file.id), target: '_blank', rel: 'noopener noreferrer' }, svgIcon('external'), '雲端硬碟')));
   paintMode();
   playerLoad(playerEl(), t);
+  if (PLAYER_SLOT && PLAYER_SLOT.name === file.name && PLAYER_SLOT.el.isConnected) playerAdopt(PLAYER_SLOT.el);
 }
 function playerLoad(el, t) {
   PLAYER.lastT = t;
+  PLAYER.positioned = false;
   el.src = playerSrc(PLAYER.file.id);
-  if (t > 0) el.addEventListener('loadedmetadata', () => { el.currentTime = t; }, { once: true });
+  el.addEventListener('loadedmetadata', () => { if (t > 0) el.currentTime = t; if (PLAYER) PLAYER.positioned = true; }, { once: true });
   el.load();
 }
+// 講次頁借用播放畫面：移進頁面裡的位置、底部的小播放器先收起來
+function playerAdopt(slot) {
+  if (!PLAYER || !PLAYER.box) return;
+  slot.append(PLAYER.box);
+  PLAYER.adopted = slot;
+  dock.hidden = true;
+  document.body.classList.remove('has-dock');
+}
+// 還回底部（換頁、上鎖之前都會呼叫）：同一個 <video>／<audio> 搬家，不會停
+function playerRelease() {
+  if (!PLAYER || !PLAYER.adopted) return;
+  PLAYER.host.append(PLAYER.box);
+  PLAYER.adopted = null;
+  dock.hidden = false;
+  document.body.classList.add('has-dock');
+}
+function playerSetRate(r) {
+  try { localStorage.setItem('om-rate', r); } catch (e) { /* 略過 */ }
+  for (const el of PLAYER ? [PLAYER.v, PLAYER.a] : []) el.playbackRate = Number(r) || 1;
+}
+// 播放中每 5 秒、暫停、播完時記進度（只有從講次頁開的才有 meta）
+function playerProgress(el) {
+  if (!PLAYER || !PLAYER.meta || !PLAYER.positioned || el !== playerEl() || typeof progressSave !== 'function') return;
+  progressSave(PLAYER.meta, el);
+}
+setInterval(() => { const el = playerEl(); if (el && !el.paused) playerProgress(el); }, 5000);
 // 影片 ↔ 聲音：從目前位置接著播（在點擊當下呼叫 play，iOS 才允許）
 function playerSwitch() {
   if (!PLAYER) return;
@@ -108,7 +147,7 @@ function playerRelogin() {
   const el = playerEl();
   PLAYER.wantLogin = false;
   const t = el && el.readyState >= 1 && el.currentTime > 0 ? el.currentTime : PLAYER.lastT;
-  gLogin({ returnHash: location.hash, resume: { file: PLAYER.file, t, mode: PLAYER.mode } }).catch(() => {});
+  gLogin({ returnHash: location.hash, resume: { file: PLAYER.file, t, mode: PLAYER.mode, meta: PLAYER.meta } }).catch(() => {});
 }
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible' && PLAYER && PLAYER.wantLogin && KEY) playerRelogin();

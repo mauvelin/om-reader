@@ -73,7 +73,7 @@ async function gAfterUnlock() {
   if (!pending || Date.now() - pending.at > 30 * 60 * 1000) return;   // 半小時前的就不接了
   if (pending.hash && pending.hash !== location.hash) history.replaceState(null, '', location.pathname + location.search + pending.hash);
   if (pending.resume && gHasToken() && typeof playerOpen === 'function') {
-    setTimeout(() => playerOpen(pending.resume.file, { t: pending.resume.t, mode: pending.resume.mode, resumed: true }), 0);
+    setTimeout(() => playerOpen(pending.resume.file, { t: pending.resume.t, mode: pending.resume.mode, meta: pending.resume.meta || null, resumed: true }), 0);
   }
 }
 UNLOCK_HOOKS.push(gAfterUnlock);
