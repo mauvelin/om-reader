@@ -81,6 +81,12 @@ async function idbPutFile(path, sha, rec) {
   tx.objectStore('shas').put(sha, path);
   return new Promise((res, rej) => { tx.oncomplete = res; tx.onerror = () => rej(tx.error); tx.onabort = () => rej(tx.error); });
 }
+async function idbPutFiles(list) {   // [[key, sha, rec], …] 同一個交易
+  const d = await db();
+  const tx = d.transaction(['files', 'shas'], 'readwrite');
+  for (const [k, sha, rec] of list) { tx.objectStore('files').put(rec, k); tx.objectStore('shas').put(sha, k); }
+  return new Promise((res, rej) => { tx.oncomplete = res; tx.onerror = () => rej(tx.error); tx.onabort = () => rej(tx.error); });
+}
 async function idbDelFile(path) {
   const d = await db();
   const tx = d.transaction(['files', 'shas'], 'readwrite');
@@ -159,7 +165,7 @@ async function checkUpdates() {
   } catch (e) { /* 沒網路、token 過期：等使用者自己到同步頁看 */ }
 }
 function updateBanner() {
-  return h('a', { class: 'note update-note', href: '#/settings' }, `有新資料：${updateInfo.files} 個檔、${fmtMB(updateInfo.bytes)}。到「同步」下載。`);
+  return h('a', { class: 'note update-note', href: '#/settings' }, `有新資料：${fmtMB(updateInfo.bytes)}。到「同步」下載。`);
 }
 async function unlock() {
   const lock = await kvGet('lock');
@@ -244,11 +250,18 @@ async function getSource() {
 function syncPriority(p) {
   if (p === 'catalog.json.gz') return 0;
   if (p === 'links.json.gz') return 1;
-  if (p.startsWith('text/')) return 2;
+  if (p.startsWith('text/') || p.startsWith('packs/t')) return 2;
   if (p.startsWith('index/')) return 3;
   return 4;
 }
-const isMedia = (p) => p.startsWith('files/');
+const isMedia = (p) => p.startsWith('files/') || p.startsWith('packs/m');
+const isPack = (p) => p.startsWith('packs/');
+const MEMBER = 'm:';          // 包拆出來的檔：以「m:＋原路徑」存，雜湊記在 shas
+let catPrefetch = null;       // 檢查更新時已下載的新目錄（同一個 sha 不重抓）
+async function hex16(buf) {
+  const d = new Uint8Array(await crypto.subtle.digest('SHA-1', buf));
+  return [...d.slice(0, 8)].map((x) => x.toString(16).padStart(2, '0')).join('');
+}
 const BUILD_ONLY = new Set(['imgmap.json', 'build-report.md', 'README.md']);   // 只給建置用，手機不下載
 let syncing = false;
 // 第一步：比對檔案樹，算出這次要下載多少（還沒下載任何東西）
@@ -259,14 +272,46 @@ async function planSync() {
   const commit = tree.commit;
   const entries = tree.entries.filter((e) => !BUILD_ONLY.has(e.path));
   const local = await idbShaMap();
-  const want = entries.filter((e) => local.get(e.path) !== e.sha).sort((a, b) => syncPriority(a.path) - syncPriority(b.path));
   const remotePaths = new Set(entries.map((e) => e.path));
-  const stale = [...local.keys()].filter((k) => !remotePaths.has(k));
+  const packed = entries.some((e) => isPack(e.path));
+  let want, stale;
+  if (!packed) {   // 舊版資料包：逐檔比對
+    want = entries.filter((e) => local.get(e.path) !== e.sha);
+    stale = [...local.keys()].filter((k) => !remotePaths.has(k));
+  } else {
+    // 第 3 版：先拿到新目錄，依每個檔的內容雜湊決定要抓哪幾包——包裡全是手機已有的內容就不抓
+    const catE = entries.find((e) => e.path === 'catalog.json.gz');
+    let catBuf = null, meta;
+    if (local.get(catE.path) === catE.sha) meta = await gunzipJSON(await fileBlob(catE.path));
+    else {
+      catBuf = catPrefetch && catPrefetch.sha === catE.sha ? catPrefetch.buf : await (await src.blob(catE)).arrayBuffer();
+      catPrefetch = { sha: catE.sha, buf: catBuf };
+      meta = await gunzipJSON(new Blob([catBuf]));
+    }
+    const packs = meta.packs || [];
+    const need = new Map(), keep = new Set();
+    for (const d of meta.docs) {
+      if (!d.x) continue;
+      keep.add(MEMBER + d.p);
+      if (local.get(MEMBER + d.p) === d.h) continue;
+      const pn = 'packs/' + packs[d.x[0]];
+      if (!need.has(pn)) need.set(pn, []);
+      need.get(pn).push({ p: d.p, h: d.h, x: d.x });
+    }
+    want = [];
+    for (const e of entries) {
+      if (e.path === catE.path) { if (catBuf) want.push(Object.assign({}, e, { buf: catBuf })); }
+      else if (isPack(e.path)) { if (need.has(e.path)) want.push(Object.assign({}, e, { members: need.get(e.path) })); }
+      else if (local.get(e.path) !== e.sha) want.push(e);
+    }
+    stale = [...local.keys()].filter((k) => (k.startsWith(MEMBER) ? !keep.has(k) : !remotePaths.has(k)));
+  }
+  want.sort((a, b) => syncPriority(a.path) - syncPriority(b.path));
   const sum = (arr) => arr.reduce((s, e) => s + (e.size || 0), 0);
   const textPart = want.filter((e) => !isMedia(e.path));
   const mediaPart = want.filter((e) => isMedia(e.path));
-  return { src, commit, entries, want, stale, textBytes: sum(textPart), mediaBytes: sum(mediaPart),
-    textFiles: textPart.length, mediaFiles: mediaPart.length, rate: src.rate };
+  return { src, commit, entries, want, stale, packed, textBytes: sum(textPart), mediaBytes: sum(mediaPart),
+    requests: want.filter((e) => !e.buf).length, textFiles: textPart.length, mediaFiles: mediaPart.length, rate: src.rate };
 }
 // 第二步：照計畫下載。textOnly＝先不抓圖片等二進位（流量有限時用），之後再同步會補
 async function runSync(plan, { textOnly = false } = {}, onProgress = () => {}) {
@@ -283,10 +328,24 @@ async function runSync(plan, { textOnly = false } = {}, onProgress = () => {}) {
       while (!stopErr && next < want.length) {
         const e = want[next++];
         try {
-          const buf = await (await src.blob(e)).arrayBuffer();
-          const sealed = await seal(buf);
-          await idbPutFile(e.path, e.sha, { size: buf.byteLength, iv: sealed.iv, ct: sealed.ct });
-          doneBytes += e.size || buf.byteLength;
+          let buf = e.buf || await (await src.blob(e)).arrayBuffer();
+          if (e.members) {   // 包：拆出手機還沒有的檔，逐一驗雜湊、加密，一個交易寫入
+            const size = buf.byteLength;
+            if (e.path.startsWith('packs/t')) buf = await new Response(new Blob([buf]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer();
+            const rows = [];
+            for (const m of e.members) {
+              const part = buf.slice(m.x[1], m.x[1] + m.x[2]);
+              if (await hex16(part) !== m.h) throw new Error('內容雜湊不符：' + m.p);
+              const sealed = await seal(part);
+              rows.push([MEMBER + m.p, m.h, { size: part.byteLength, iv: sealed.iv, ct: sealed.ct }]);
+            }
+            await idbPutFiles(rows);
+            doneBytes += e.size || size;
+          } else {
+            const sealed = await seal(buf);
+            await idbPutFile(e.path, e.sha, { size: buf.byteLength, iv: sealed.iv, ct: sealed.ct });
+            doneBytes += e.size || buf.byteLength;
+          }
           doneFiles++;
         } catch (err) {
           if (err.rateLimited || err.status === 401 || !KEY) { stopErr = err; break; }
@@ -296,7 +355,9 @@ async function runSync(plan, { textOnly = false } = {}, onProgress = () => {}) {
       }
     };
     await Promise.all(Array.from({ length: 6 }, worker));
-    if (!stopErr) for (const k of plan.stale) await idbDelFile(k);
+    // 舊版的圖片（files/…）在只下載文字時先留著：新版的圖還沒下載前，頁面照樣用舊的顯示
+    let removed = 0;
+    if (!stopErr) for (const k of plan.stale) if (!(textOnly && k.startsWith('files/'))) { await idbDelFile(k); removed++; }
     const complete = !stopErr && failed === 0;
     const prev = (await kvGet('state')) || {};
     if (complete) {
@@ -306,7 +367,8 @@ async function runSync(plan, { textOnly = false } = {}, onProgress = () => {}) {
       await kvSet('state', Object.assign(prev, { partialAt: Date.now() }));
     }
     resetCaches();
-    return { complete, failed, stopErr, downloaded: doneFiles, removed: complete ? plan.stale.length : 0, rate: src.rate, textOnly };
+    if (complete) catPrefetch = null;
+    return { complete, failed, stopErr, downloaded: doneFiles, removed, rate: src.rate, textOnly };
   } finally { syncing = false; }
 }
 
@@ -335,6 +397,7 @@ async function catalog() {
   const byPath = new Map(), byName = new Map(), byStem = new Map();
   meta.docs.forEach((d, i) => {
     d.i = i;
+    if (d.x && !d.f) d.s = 0;   // 第 3 版的文字檔：沒有分片編號，但其餘畫面以「有 s」判斷是文字
     byPath.set(d.p, d);
     const base = basename(d.p).toLowerCase();
     if (!byName.has(base)) byName.set(base, []);
@@ -368,7 +431,15 @@ async function shard(n) {
   shardCache.set(n, obj);
   return obj;
 }
-async function docText(d) { return d.s == null ? null : ((await shard(d.s))[d.p] ?? null); }
+async function docText(d) {
+  if (d.x) { const r = await idbGet('files', MEMBER + d.p); return r ? td.decode(await open_(r)) : null; }
+  return d.s == null ? null : ((await shard(d.s))[d.p] ?? null);
+}
+// 圖片與附件：第 3 版在包拆出的那一筆；還沒下載到時，先用舊版資料包留下的 files/…
+async function mediaBlob(d) {
+  if (!d.x) return fileBlob(d.f);
+  return (await fileBlob(MEMBER + d.p)) || fileBlob('files/' + d.f);
+}
 
 // wikilink 解析——與 tools/pwa/build.py 的 resolve() 同規則
 function resolveLink(target, srcPath) {
@@ -479,7 +550,7 @@ function renderMarkdown(body, srcPath, fn) {
 async function hydrateOne(el, bucket) {
   const d = CAT && CAT.byPath.get(el.getAttribute('data-om'));
   if (!d || !d.f) return;
-  const b = await fileBlob(d.f);
+  const b = await mediaBlob(d);
   if (!b) { if (el.tagName === 'IMG') el.alt = (el.alt || '') + '（圖片尚未同步）'; return; }
   const url = URL.createObjectURL(new Blob([b], { type: mimeOf(d.f) }));
   bucket.push(url);
@@ -926,7 +997,7 @@ async function viewPage(path) {
     else if (ext === 'csv' || ext === 'tsv') body.append(csvTable(text, ext === 'tsv' ? '\t' : ','));
     else body.append(h('pre', { class: 'raw' + (ext === 'txt' || ext === 'jsonl' ? ' wrap' : '') }, text));
   } else if (d.f) {
-    const b = await fileBlob(d.f);
+    const b = await mediaBlob(d);
     if (!b) body.append(h('p', { class: 'note' }, '這個檔案還沒同步。'));
     else {
       const typed = new Blob([b], { type: mimeOf(d.f) });
@@ -1155,6 +1226,13 @@ async function viewSettings() {
   const repo = h('input', { id: 'cfg-repo', type: 'text', autocomplete: 'off', autocapitalize: 'off', spellcheck: 'false', placeholder: 'owner/repo', value: cfg.repo || '' });
   const token = h('input', { id: 'cfg-token', type: 'password', autocomplete: 'off', autocapitalize: 'off', spellcheck: 'false', placeholder: cfg.token ? '（已存，留空表示不變）' : 'github_pat_…' });
   const out = h('p', { class: 'status', role: 'status' });
+  const quota = h('p', { class: 'muted quota', hidden: true });
+  const showQuota = (rate) => {
+    if (!rate || rate.remaining == null) return;
+    quota.hidden = false;
+    quota.textContent = `GitHub 額度：這一小時還剩 ${Number(rate.remaining).toLocaleString()} 次` +
+      (rate.reset ? `，${new Date(rate.reset * 1000).toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' })} 重置` : '') + '（所有 token 共用）';
+  };
   const prog = h('progress', { max: '100', value: '0', hidden: true });
   const checkBtn = h('button', { type: 'button', class: 'btn primary' }, svgIcon('sync'), '檢查更新');
   const choice = h('div', { class: 'row', hidden: true });
@@ -1178,11 +1256,13 @@ async function viewSettings() {
     try {
       const res = await runSync(plan, { textOnly }, (p) => {
         prog.max = Math.max(1, p.totalBytes); prog.value = p.doneBytes;
-        out.textContent = `下載中 ${p.doneFiles}／${p.totalFiles} 個檔（${fmtMB(p.doneBytes)}／${fmtMB(p.totalBytes)}）${p.failed ? `，失敗 ${p.failed}` : ''}`;
+        out.textContent = `下載中 ${p.doneFiles}／${p.totalFiles}（${fmtMB(p.doneBytes)}／${fmtMB(p.totalBytes)}）${p.failed ? `，失敗 ${p.failed}` : ''}`;
+        showQuota(p.rate);
       });
+      showQuota(res.rate);
       if (res.complete) updateInfo = null;
       if (res.busy) out.textContent = '已在同步中。';
-      else if (res.complete) out.textContent = `同步完成：下載 ${res.downloaded} 個檔，移除 ${res.removed} 個舊檔。${textOnly ? '圖片與附件留到下次。' : ''}`;
+      else if (res.complete) out.textContent = `同步完成：下載 ${res.downloaded} ${plan.packed ? '包' : '個檔'}，清掉 ${res.removed} 筆舊資料。${textOnly ? '圖片與附件留到下次。' : ''}`;
       else if (res.stopErr && res.stopErr.rateLimited) out.textContent = `GitHub 每小時額度用完，已下載的都保留了。${res.rate && res.rate.reset ? new Date(res.rate.reset * 1000).toLocaleTimeString('zh-TW') + ' 後' : '稍後'}再同步會接著下載。`;
       else if (res.stopErr) out.textContent = `同步中止：${res.stopErr.message}`;
       else out.textContent = `同步未完成：${res.failed} 個檔下載失敗，再同步一次會補抓。`;
@@ -1202,9 +1282,10 @@ async function viewSettings() {
     out.textContent = '比對檔案清單…';
     try {
       const plan = await planSync();
+      showQuota(plan.rate);
       const total = plan.textBytes + plan.mediaBytes;
       if (!plan.want.length && !plan.stale.length) { out.textContent = '已是最新，沒有要下載的。'; return; }
-      out.textContent = `這次要下載 ${plan.want.length} 個檔、共 ${fmtMB(total)}：文字與索引 ${fmtMB(plan.textBytes)}，圖片與附件 ${fmtMB(plan.mediaBytes)}。`;
+      out.textContent = `這次要下載 ${plan.want.length} ${plan.packed ? '包' : '個檔'}、共 ${fmtMB(total)}（約 ${plan.requests} 次請求）：文字與索引 ${fmtMB(plan.textBytes)}，圖片與附件 ${fmtMB(plan.mediaBytes)}。`;
       checkBtn.className = 'btn';
       choice.replaceChildren(h('button', { type: 'button', class: 'btn primary', onclick: () => doSync(plan, false) }, `全部下載（${fmtMB(total)}）`));
       if (plan.mediaFiles) choice.append(h('button', { type: 'button', class: 'btn', onclick: () => doSync(plan, true) }, `只下載文字（${fmtMB(plan.textBytes)}）`));
@@ -1225,7 +1306,7 @@ async function viewSettings() {
     h('div', { class: 'card' },
       h('div', { class: 'field' }, h('label', { for: 'cfg-repo' }, '資料 repo（擁有者/名稱）'), repo),
       h('div', { class: 'field' }, h('label', { for: 'cfg-token' }, '唯讀 token'), token),
-      h('div', { class: 'row' }, checkBtn), out, choice, prog),
+      h('div', { class: 'row' }, checkBtn), out, choice, prog, quota),
     secTitle('這支手機'), h('div', { class: 'card' }, info),
     h('p', { class: 'muted' }, '只下載有變動的檔。repo 名稱與 token 只存在這支手機，token 與所有資料都以 Face ID 導出的金鑰加密。token 到期後在這裡貼上新的即可。'),
     h('div', { class: 'row' }, lockBtn, clearBtn));
