@@ -999,7 +999,10 @@ function asHtml(x) { return typeof x === 'string' ? x : (x && x.html) || ''; }
 // 用 media.key 到雲端硬碟找檔，開播放器（帶 meta 才會記進度）
 async function openLessonMedia(l, meta, t, isAudio, note, name = l.media.key) {
   if (!gHasToken() || gMinutesLeft() < RENEW_BEFORE_MIN) {
-    return gLogin({ returnHash: location.hash, resume: null }).catch((e) => { note.textContent = e.message; });
+    const why = gHasToken() ? `Google 登入只剩 ${gMinutesLeft()} 分鐘，播到一半會斷，要先續期。` : '要先登入 Google 才能播放這一講。';
+    const went = await gLoginAsk(why, { returnHash: location.hash, resume: null }).catch((e) => { note.textContent = e.message; return true; });
+    if (!went) note.textContent = '沒有登入，沒開始播。';
+    return;
   }
   note.textContent = '在雲端硬碟找檔…';
   try {

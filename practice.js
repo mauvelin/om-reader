@@ -230,7 +230,12 @@ async function viewPracticeItem(id, qs) {
       return;
     }
     if (!s.enabled) { status.textContent = '到「同步」頁啟用「雲端硬碟影音」並登入 Google，就能在這裡播放。'; return; }
-    if (!gHasToken() || gMinutesLeft() < RENEW_BEFORE_MIN) return gLogin({ returnHash: location.hash, resume: null }).catch((e) => { status.textContent = e.message; });
+    if (!gHasToken() || gMinutesLeft() < RENEW_BEFORE_MIN) {
+      const why = gHasToken() ? `Google 登入只剩 ${gMinutesLeft()} 分鐘，播到一半會斷，要先續期。` : '要先登入 Google 才能播放這一支。';
+      const went = await gLoginAsk(why, { returnHash: location.hash, resume: null }).catch((e) => { status.textContent = e.message; return true; });
+      if (!went) status.textContent = '沒有登入，沒開始播。';
+      return;
+    }
     status.textContent = '讀取雲端硬碟…';
     try {
       // 匯出檔帶的是雲端硬碟 ID：先確認檔案還在（不在垃圾桶），拿到大小給 Service Worker 補 Content-Range

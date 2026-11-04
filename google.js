@@ -44,6 +44,14 @@ async function gLogin({ returnHash, resume, silent } = {}) {
   location.href = 'https://accounts.google.com/o/oauth2/v2/auth?' + p.toString();
 }
 
+// 不是本人按「登入 Google」、而是用到要登入的功能時：先問一次再跳。Google 的登入頁不在 App 裡，
+// 跳過去就沒有按鈕可以回來（本人 2026-11-04）。回傳 true＝跳過去了；false＝本人選了留在原畫面
+async function gLoginAsk(why, args) {
+  if (!confirm(`${why}\n\n按「好」會跳到 Google 的登入頁，登入完自動回到這裡；按「取消」留在原畫面。`)) return false;
+  await gLogin(args);
+  return true;
+}
+
 // 啟動時、路由之前呼叫：網址 # 後面若是 Google 帶回來的結果，取下、核對 state、立刻從網址清掉
 // （App 換頁也用 #，不先清掉會被當成一個頁面網址）
 function gTakeReturn() {

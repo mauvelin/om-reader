@@ -186,7 +186,14 @@ function playerRelogin() {
   const el = playerEl();
   PLAYER.wantLogin = false;
   const t = el && el.readyState >= 1 && el.currentTime > 0 ? el.currentTime : PLAYER.lastT;
-  gLogin({ returnHash: location.hash, resume: { file: PLAYER.file, t, mode: PLAYER.mode, meta: PLAYER.meta } }).catch(() => {});
+  const args = { returnHash: location.hash, resume: { file: PLAYER.file, t, mode: PLAYER.mode, meta: PLAYER.meta } };
+  gLoginAsk('Google 登入失效了，雲端硬碟的影音要重新登入才能繼續播。', args).then((went) => {
+    if (went || !PLAYER) return;
+    if (el) el.pause();   // 選了不登入：停在這裡，播放器上留一顆按鈕，想登入時再按
+    const st = document.querySelector('.dock .status');
+    const again = h('button', { type: 'button', class: 'btn primary', onclick: () => gLogin(args).catch(() => {}) }, '登入 Google 繼續播');
+    if (st) { st.replaceChildren('Google 登入失效，停在這裡。', ' ', again); }
+  }).catch(() => {});
 }
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible' && PLAYER && PLAYER.wantLogin && KEY) playerRelogin();
