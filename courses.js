@@ -400,7 +400,7 @@ async function viewLesson(id, qs) {
   await lrec();
   const { lesson: l, course: c, i } = hit;
   const key = l.media && l.media.key;
-  const meta = key ? { key, lessonId: l.id, courseId: c.id, title: `${l.order ? l.order + ' ' : ''}${l.lesson_title || l.title}`, href: '#/lesson/' + encodeURIComponent(l.id) } : null;
+  const meta = key ? { key, lessonId: l.id, courseId: c.id, course: c.title, title: `${l.order ? l.order + ' ' : ''}${l.lesson_title || l.title}`, href: '#/lesson/' + encodeURIComponent(l.id) } : null;
   const startT = Number(new URLSearchParams(qs || '').get('t')) || 0;
   const prog = lessonProgress(l);
   const isAudio = l.media && l.media.kind && l.media.kind !== 'mp4';

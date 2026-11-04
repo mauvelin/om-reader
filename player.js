@@ -24,7 +24,8 @@ function dockShow(...kids) {
   document.body.classList.add('has-dock');
 }
 // 從 App 切換器把 App 滑掉時，頁面被卸下前先停播並記進度（本人 2026-11-04：關掉 App 後聲音還在播）。
-// iOS 有時不給卸下的通知就直接結束；那種情況這裡管不到，只能從鎖定畫面或控制中心按暫停
+// 本人 2026-11-04 實測：iPhone 從切換器滑掉主畫面 App 時不會送出這個通知，聲音照播——程式管不到，只能從鎖定畫面或控制中心按暫停。
+// 留著給會送通知的環境（例：電腦瀏覽器關分頁）
 window.addEventListener('pagehide', (e) => {
   if (e.persisted || !PLAYER) return;
   const el = playerEl();
@@ -160,15 +161,17 @@ function fmtClock(s) {
   s = Math.max(0, Math.floor(s || 0));
   return `${Math.floor(s / 3600)}:${String(Math.floor(s / 60) % 60).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
 }
-// 鎖定畫面顯示什麼（課名講次，或只顯示「OM」）本人還沒決定：先只顯示「OM」
 function setupMediaSession() {
   if (!('mediaSession' in navigator)) return;
   try {
-    navigator.mediaSession.metadata = new MediaMetadata({ title: 'OM', artist: '' });
+    // 鎖定畫面與控制中心：講次（或練習）名稱＋課名（本人 2026-11-04 決定；原本先只顯示「OM」）
+    const m = (PLAYER && PLAYER.meta) || {};
+    navigator.mediaSession.metadata = new MediaMetadata({ title: m.title || (PLAYER && PLAYER.file && PLAYER.file.name) || 'OM', artist: m.course || '', album: 'OM',
+      artwork: [{ src: 'icons/icon-512.png', sizes: '512x512', type: 'image/png' }] });
     navigator.mediaSession.setActionHandler('play', () => { const el = playerEl(); if (el) el.play(); });
     navigator.mediaSession.setActionHandler('pause', () => { const el = playerEl(); if (el) el.pause(); });
-    navigator.mediaSession.setActionHandler('seekbackward', () => { const el = playerEl(); if (el) el.currentTime = Math.max(0, el.currentTime - 15); });
-    navigator.mediaSession.setActionHandler('seekforward', () => { const el = playerEl(); if (el) el.currentTime += 15; });
+    navigator.mediaSession.setActionHandler('seekbackward', () => { const el = playerEl(); if (el) el.currentTime = Math.max(0, el.currentTime - 10); });
+    navigator.mediaSession.setActionHandler('seekforward', () => { const el = playerEl(); if (el) el.currentTime += 10; });
   } catch (e) { /* 部分動作不支援時略過 */ }
 }
 
