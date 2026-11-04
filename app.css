@@ -359,11 +359,15 @@ label.check input { width: 20px; height: 20px; accent-color: var(--accent); }
 .rate-row .filter { min-height: 36px; padding: 4px 10px; font-variant-numeric: tabular-nums; }
 /* 講次頁控制列：一行放完（播放｜速度｜跟隨｜收起影片） */
 .lesson-ctl { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin: var(--sp-2) 0 0; }
-.lesson-ctl .btn { min-height: 38px; padding: 4px 8px; white-space: nowrap; }
+.lesson-ctl .btn { min-height: 38px; height: 38px; padding: 0 8px; white-space: nowrap; }
 .lesson-ctl .btn.primary { gap: 6px; font-variant-numeric: tabular-nums; }
 .lesson-ctl .btn .i { width: 18px; height: 18px; }
-/* 速度：不要系統的下拉箭頭，寬度只剩數字（本人 2026-11-04：再縮小一點）；點了照樣是系統的選單 */
-.rate-sel { min-height: 38px; padding: 4px 7px; font: inherit; font-size: 16px; font-variant-numeric: tabular-nums; text-align: center; color: var(--fg); background: var(--card); border: 1px solid var(--field-line); border-radius: var(--r-btn); -webkit-appearance: none; appearance: none; }
+/* 速度：跟同一行的次要按鈕（.btn.quiet）同一個樣子——透明底、無框、同字級粗細顏色與高度；不要系統的下拉箭頭。
+   點了照樣是系統的選單（本人 2026-11-04：白底又比較高，跟同一行突兀） */
+.rate-sel { box-sizing: border-box; height: 38px; min-height: 38px; padding: 0 6px; font: inherit; font-size: var(--fs-chip); font-weight: var(--fw-strong); line-height: 38px;
+  font-variant-numeric: tabular-nums; text-align: center; color: var(--muted); background: transparent; border: 1px solid transparent; border-radius: var(--r-btn);
+  -webkit-appearance: none; appearance: none; cursor: pointer; }
+.rate-sel:active { background: var(--chip); }
 .lesson-ctl label.check.follow { min-height: 38px; gap: 4px; padding: 0 2px; font-size: var(--fs-chip); }
 .lesson-ctl .fold { margin-left: auto; }
 .video-off .lesson-slot video { display: none; }
