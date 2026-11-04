@@ -1113,8 +1113,8 @@ function transcriptHits(text, terms, lesson) {
 function lessonHitLink(x, hit, terms) {
   const l = x.lesson;
   return h('li', null, areaColor(h('a', { class: 'item', href: `#/lesson/${encodeURIComponent(l.id)}?t=${hit.t}` },
-    h('span', { class: 't' }, `${l.order ? l.order + '　' : ''}${l.lesson_title || l.title}`),
-    h('span', { class: 'm' }, `講次・${x.course.title}・${clock(hit.t)}${hit.n > 1 ? `・這一講共 ${hit.n} 處` : ''}`),
+    h('span', { class: 't' }, `${l.order ? l.order + '　' : ''}${l.lesson_title || l.title}`, h('span', { class: 'kind-tag' }, '講次')),
+    h('span', { class: 'm' }, `${x.course.title}・${clock(hit.t)}${hit.n > 1 ? `・這一講共 ${hit.n} 處` : ''}`),
     markTerms(hit.text, terms.map((t) => t.toLowerCase()))), null, x.course.category));
 }
 // 課程裡的每一頁是哪一種（逐字稿／講義／摘要／課程筆記／整門課摘要）、屬於哪門課、哪幾講：

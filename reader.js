@@ -847,6 +847,33 @@ async function htmlFrame(blob) {
   return frame;
 }
 
+// 全站搜尋也找課程（課名）與練習（標題、風格、老師、系列、摘要、標籤；練習目錄的同一套欄位）：
+// 每個詞都要出現；各最多 10 筆，帶〔課程〕〔練習〕小標籤（本人 2026-11-04）
+async function searchCoursesPractice(tl) {
+  const out = [];
+  const has = (parts) => { const x = parts.filter(Boolean).join(' ').toLowerCase(); return tl.every((t) => x.includes(t)); };
+  const tag = (label) => h('span', { class: 'kind-tag' }, label);
+  const ci = typeof courseIndex === 'function' ? await courseIndex().catch(() => null) : null;
+  if (ci) {
+    const cs = ci.list.filter((c) => has([c.title, c.project, ...(c.series || [])]));
+    for (const c of cs.slice(0, 10)) {
+      out.push(h('li', null, areaColor(h('a', { class: 'item', href: '#/course/' + encodeURIComponent(c.id) },
+        h('span', { class: 't' }, c.title, tag('課程')), h('span', { class: 'm' }, [c.category, `${c.lessons.length} 講`].filter(Boolean).join('　'))), null, c.category)));
+    }
+    if (cs.length > 10) out.push(h('li', { class: 'muted more' }, `另有 ${cs.length - 10} 門課符合，到「課程」分頁搜尋。`));
+  }
+  const pd = typeof practiceData === 'function' ? await practiceData().catch(() => null) : null;
+  if (pd) {
+    const ps = pd.items.filter((r) => has([r.title, r.style, r.teacher, r.series, r.summary, ...(r.tags || [])]));
+    for (const r of ps.slice(0, 10)) {
+      out.push(h('li', null, h('a', { class: 'item', href: '#/practice/item/' + encodeURIComponent(r.id) },
+        h('span', { class: 't' }, r.title, tag('練習')),
+        h('span', { class: 'm' }, [r.style, r.teacher, r.duration_min != null ? `${r.duration_min} 分鐘` : ''].filter(Boolean).join('　')))));
+    }
+    if (ps.length > 10) out.push(h('li', { class: 'muted more' }, `另有 ${ps.length - 10} 支練習符合，到「練習」分頁搜尋。`));
+  }
+  return out;
+}
 async function viewSearch(q) {
   $('#q').value = q;
   const cat = await catalog();
@@ -861,7 +888,8 @@ async function viewSearch(q) {
   const rank = (d) => { const t = docTitle(d).toLowerCase(); return t === ql ? 0 : tl.every((x) => t.includes(x)) ? 1 : 2; };
   const cands = paths.map((p) => cat.byPath.get(p)).filter(Boolean);
   cands.sort((a, b) => rank(a) - rank(b) || String(b.d || '').localeCompare(String(a.d || '')));
-  if (!cands.length) return setView(h('h1', null, `「${q}」`), h('p', { class: 'empty-box' }, '沒有找到。'));
+  const extra = await searchCoursesPractice(tl);   // 課程與練習（不在全文索引裡）：列在最上面、帶小標籤
+  if (!cands.length && !extra.length) return setView(h('h1', null, `「${q}」`), h('p', { class: 'empty-box' }, '沒有找到。'));
   const laneCountsQ = new Map();
   for (const d of cands) laneCountsQ.set(d.l, (laneCountsQ.get(d.l) || 0) + 1);
   const state = { lane: null, cursor: 0, shown: 0 };
@@ -887,19 +915,19 @@ async function viewSearch(q) {
       const hit = lx ? transcriptHits(text, terms, lx.lesson) : null;
       list.append(hit ? lessonHitLink(lx, hit, terms) : itemLink(d, sn ? h('span', { class: 'snip' }, ...sn) : null, { q: q.trim() }));
     }
-    info.textContent = `${state.shown} 則${state.cursor < all.length ? `・還有 ${all.length - state.cursor} 則待比對` : ''}`;
-    if (!state.shown && state.cursor >= all.length) list.replaceChildren(h('li', { class: 'empty' }, '索引有候選，但沒有一則同時包含所有詞。'));
+    info.textContent = `${state.shown + (state.lane ? 0 : extra.filter((x) => !x.classList.contains('muted')).length)} 則${state.cursor < all.length ? `・還有 ${all.length - state.cursor} 則待比對` : ''}`;
+    if (!state.shown && state.cursor >= all.length && (state.lane || !extra.length)) list.replaceChildren(h('li', { class: 'empty' }, '索引有候選，但沒有一則同時包含所有詞。'));
     more.hidden = state.cursor >= all.length;
   };
   more.addEventListener('click', page);
-  const render = () => { list.replaceChildren(); state.cursor = 0; state.shown = 0; return page(); };
-  chipRow.append(h('button', { type: 'button', class: 'filter', 'aria-pressed': 'true', onclick: (e) => pick(e, null) }, `全部 ${cands.length}`),
+  const render = () => { list.replaceChildren(...(state.lane ? [] : extra)); state.cursor = 0; state.shown = 0; return page(); };
+  chipRow.append(h('button', { type: 'button', class: 'filter', 'aria-pressed': 'true', onclick: (e) => pick(e, null) }, `全部 ${cands.length + extra.length}`),
     ...[...laneCountsQ].sort((a, b) => b[1] - a[1]).map(([l, c]) => h('button', { type: 'button', class: 'filter', 'aria-pressed': 'false', onclick: (e) => pick(e, l) }, `${laneName(l)} ${c}`)));
   function pick(e, lane) {
     state.lane = lane;
     chipRow.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b === e.currentTarget)));
     render();
   }
-  setView(h('h1', null, `「${q}」`), laneCountsQ.size > 1 ? chipRow : null, info, list, more);
+  setView(h('h1', null, `「${q}」`), laneCountsQ.size > 1 || (extra.length && laneCountsQ.size) ? chipRow : null, info, list, more);
   await render();
 }
