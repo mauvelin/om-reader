@@ -263,8 +263,8 @@ function updateChrome(hash, locked) {
   const deep = /^#\/(p|l|s|c|course|lesson|practice\/item)\/|^#\/history/.test(hash);
   $('#back').hidden = locked || !deep || navDepth === 0;
   $('#brand').hidden = !$('#back').hidden;
-  // 課程頁、講次頁、分類裡的 self/resources 都算「課程」分頁；看過從首頁進，算首頁
-  const tab = hash.startsWith('#/courses') || hash.startsWith('#/c/') || hash.startsWith('#/course/') || hash.startsWith('#/lesson/') || hash.startsWith('#/l/' + enc('self/resources')) ? 'courses'
+  // 課程頁、講次頁算「課程」分頁（分類裡的 self/resources 是資料夾，算分類）；看過從首頁進，算首頁
+  const tab = hash.startsWith('#/courses') || hash.startsWith('#/c/') || hash.startsWith('#/course/') || hash.startsWith('#/lesson/') ? 'courses'
     : hash.startsWith('#/browse') || hash.startsWith('#/l/') ? 'browse'
     : hash.startsWith('#/practice') ? 'practice'
     : hash.startsWith('#/history') ? 'home'

@@ -235,7 +235,7 @@ async function viewCourses(cat, lane) {
     kids.push(h('p', { class: 'muted' }, '登入 Google 後，會讀 learn 匯出的分組（主題 → 老師）與概念。'));
   }
   if (loose.length) kids.push(h('details', { class: 'aux' }, h('summary', null, `不屬於任何課程（${loose.length}）`), listOf(loose.map((d) => itemLink(d)))));
-  kids.push(h('p', { class: 'muted more' }, h('a', { href: '#/l/' + enc(lane) + '?all=1' }, '改看全部檔案清單')));
+  kids.push(h('p', { class: 'muted more' }, h('a', { href: '#/l/' + enc(lane) }, '改看原本的資料夾')));
   setView(...kids);
 }
 // 舊網址 #/c/<序號>：換成課程 ID

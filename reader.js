@@ -491,13 +491,45 @@ async function viewHistory(qs) {
 }
 
 const isAux = (d) => /^_/.test(basename(d.p)) || basename(d.p) === 'index.md' || /\.(json|jsonl)$/.test(d.p);
+// 分類裡的 self/resources：照 repo 原本的課程資料夾分組（本人 2026-11-04：分類＝原本的資料夾；
+// 照學習方式看的課程清單在「課程」分頁）。每個資料夾收合，展開才畫清單；逐字稿、講義帶種類標籤
+function viewLaneFolders(cat, lane) {
+  const base = 'vault/' + lane + '/';
+  const groups = new Map();
+  const root = [];
+  for (const d of cat.docs) {
+    if (d.l !== lane || !(d.s != null || /\.(pdf|html?|mp4)$/i.test(d.p)) || !d.p.startsWith(base)) continue;
+    const rest = d.p.slice(base.length);
+    const k = rest.indexOf('/');
+    if (k < 0) { root.push(d); continue; }
+    const f = rest.slice(0, k);
+    if (!groups.has(f)) groups.set(f, []);
+    groups.get(f).push(d);
+  }
+  const cmp = (a, b) => docTitle(a).localeCompare(docTitle(b), 'zh-Hant', { numeric: true });
+  const names = [...groups.keys()].sort((a, b) => (a.startsWith('_') - b.startsWith('_')) || a.localeCompare(b, 'zh-Hant'));
+  const n = [...groups.values()].reduce((x, xs) => x + xs.length, 0) + root.length;
+  const kids = [h('div', { class: 'doc-head' }, h('h1', null, laneName(lane))),
+    h('p', { class: 'page-sub' }, `${names.length} 個資料夾・${n.toLocaleString()} 則`),
+    h('div', { class: 'row' }, h('a', { class: 'btn', href: '#/courses' }, svgIcon('course'), '改用課程方式看'))];
+  for (const f of names) {
+    const xs = groups.get(f).sort(cmp);
+    const det = h('details', { class: 'aux folder' }, h('summary', null, `${f}（${xs.length}）`));
+    det.addEventListener('toggle', () => { if (det.open && det.childNodes.length === 1) det.append(listOf(xs.map((d) => itemLink(d)))); });
+    kids.push(det);
+  }
+  const loose = root.filter((d) => !isAux(d));
+  if (loose.length) kids.push(secTitle('資料夾外'), listOf(loose.sort(cmp).map((d) => itemLink(d))));
+  kids.push(h('p', { class: 'muted more' }, h('a', { href: '#/l/' + enc(lane) + '?all=1' }, '改看全部檔案清單（不分資料夾）')));
+  setView(...kids);
+}
 async function viewLane(arg) {
   const [lane, qs] = arg.split('?');
   const params = new URLSearchParams(qs || '');
   const cat = await catalog();
   if (!cat) return emptyState();
   const ui = cat.ui || {};
-  if (lane === 'self/resources' && (ui.courses || []).length && !params.has('all')) return viewCourses(cat, lane);
+  if (lane === 'self/resources' && !params.has('all')) return viewLaneFolders(cat, lane);
   const all = cat.docs.filter((d) => d.l === lane && (d.s != null || /\.(pdf|html?|mp4)$/i.test(d.p)));
   let docs = all.filter((d) => !isAux(d));
   const aux = all.filter(isAux);
