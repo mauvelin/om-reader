@@ -217,6 +217,9 @@ progress::-moz-progress-bar { background: var(--accent); }
 .doc-head h1.long { font-size: var(--fs-section); }
 .doc-head h1 { margin-bottom: var(--sp-1); }
 .doc-actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin: 0 0 var(--sp-4); }
+.doc-actions:empty { display: none; }
+.doc-actions .jump { gap: 4px; font-variant-numeric: tabular-nums; }
+.doc-actions .jump .i { width: 16px; height: 16px; color: var(--muted); }
 .md { font-size: var(--fs-read); line-height: var(--lh-read); overflow-wrap: anywhere; }
 .md > :first-child { margin-top: 0; }
 .md p { margin: 0 0 1em; }

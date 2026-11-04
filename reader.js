@@ -605,8 +605,7 @@ async function viewPage(path) {
       }
     }
   }
-  const kids = [head, chips];
-  if (actions.childElementCount) kids.push(actions);
+  const kids = [head, chips, actions];   // 按鈕列：沒有按鈕時 CSS 收起（下面會補「來源／被引用」的跳轉鈕）
   if (cites) kids.push(cites.where);   // 出現在的講次
   const nav = docNav(d);
   if (nav) kids.push(nav);
@@ -614,12 +613,15 @@ async function viewPage(path) {
   if (nav) kids.push(docNav(d));
   // 來源（論點卡的 sources、概念頁引用的 raw）與反向連結
   const L = await links();
+  const jumps = [];   // 頁首按鈕列的「來源 N」「被引用 N」：按了捲到最底下那一段（本人 2026-11-04）
   if (d._fn && d._fn.map.size) {   // 註腳：照正文出現順序編號
     const ordered = [...d._fn.map.entries()].sort((a, b) => a[1] - b[1]).map(([p, n]) => [cat.byPath.get(p), n]).filter((x) => x[0]);
-    kids.push(secTitle(`來源（${ordered.length}）`), h('ol', { class: 'list fn-list' }, ordered.map(([x, n]) => itemLink(x, null).firstChild ? h('li', { value: n }, itemLink(x).firstChild) : null)));
+    const t = secTitle(`來源（${ordered.length}）`);
+    kids.push(t, h('ol', { class: 'list fn-list' }, ordered.map(([x, n]) => itemLink(x, null).firstChild ? h('li', { value: n }, itemLink(x).firstChild) : null)));
+    jumps.push(['來源', ordered.length, t]);
   } else {
     const outs = (L.out.get(d.p) || []).map((p) => cat.byPath.get(p)).filter((x) => x && x.nid && x.p !== d.p);
-    if (outs.length && !d.nid) kids.push(secTitle(`引用的來源（${outs.length}）`), listOf(outs.slice(0, 60).map((x) => itemLink(x))));
+    if (outs.length && !d.nid) { const t = secTitle(`引用的來源（${outs.length}）`); kids.push(t, listOf(outs.slice(0, 60).map((x) => itemLink(x)))); jumps.push(['來源', outs.length, t]); }
   }
   if (d.l === 'wiki/people') {   // 人物頁：此作者的原始筆記（raw 的 author 對上人物頁的 handle 或名字）
     const keys = [d.hd, docTitle(d)].filter(Boolean).map((k) => String(k).toLowerCase().replace(/^@/, ''));
@@ -630,7 +632,13 @@ async function viewPage(path) {
   const mocArea = (d.p.match(/^vault\/wiki\/MOC\/(.+)\.md$/) || [])[1];
   if (mocArea) kids.push(...areaExtras(cat, mocArea));
   const backs = (L.back.get(d.p) || []).map((p) => cat.byPath.get(p)).filter(Boolean);
-  if (backs.length) kids.push(secTitle(`被引用（${backs.length}）`), listOf(backs.slice(0, 200).map((x) => itemLink(x))));
+  if (backs.length) { const t = secTitle(`被引用（${backs.length}）`); kids.push(t, listOf(backs.slice(0, 200).map((x) => itemLink(x)))); jumps.push(['被引用', backs.length, t]); }
+  for (const [label, n, target] of jumps) {
+    actions.append(h('button', { type: 'button', class: 'btn jump', 'aria-label': `${label} ${n} 則，捲到頁面最下面`, onclick: () => {
+      const bar = document.querySelector('.bar');
+      window.scrollTo({ top: Math.max(0, target.getBoundingClientRect().top + window.scrollY - (bar ? bar.getBoundingClientRect().height : 0) - 8), behavior: 'smooth' });
+    } }, `${label} ${n}`, svgIcon('down')));
+  }
   setView(...kids);
   hydrateMedia(view);
   if (restoreOnOpen === d.p) {
