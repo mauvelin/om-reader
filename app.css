@@ -329,7 +329,8 @@ a.update-note { display: block; color: var(--fg); text-decoration: none; margin-
   background: var(--card); border: 1px solid var(--line2); border-bottom: 0; box-shadow: var(--shadow-card);
 }
 .dock-head { display: flex; align-items: center; gap: var(--sp-2); }
-.dock-title { flex: 1; min-width: 0; font-size: var(--fs-chip); font-weight: var(--fw-strong); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dock-title { flex: 1; min-width: 0; font-size: var(--fs-chip); font-weight: var(--fw-strong); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg); text-decoration: none; }
+.dock-head .btn { min-height: 36px; padding: 2px 10px; }
 .dock-media video { display: block; width: 100%; max-height: 34vh; background: #000; }
 .dock-media audio { display: block; width: 100%; }
 .dock .row { margin: var(--sp-2) 0 0; }

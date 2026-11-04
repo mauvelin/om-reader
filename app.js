@@ -255,7 +255,20 @@ function updateChrome(hash, locked) {
   document.querySelectorAll('.tabs a').forEach((a) => {
     if (a.dataset.tab === tab) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
   });
+  curTab = tab;
+  if (!locked && tab && TAB_MEMORY.has(tab)) tabLast[tab] = hash;
 }
+// 分頁記住上次停在哪一頁（本人 2026-11-04：點「課程」回不到正在聽的那一講）：從別的分頁點回來，回到上次那頁；
+// 已經在這個分頁時再點一次，才回到分頁的首頁（iPhone App 的分頁習慣）。只記在記憶體，重開 App 從首頁開始
+const TAB_MEMORY = new Set(['browse', 'courses', 'practice']);
+const tabLast = {};
+let curTab = null;
+document.querySelectorAll('.tabs a').forEach((a) => a.addEventListener('click', (e) => {
+  const t = a.dataset.tab;
+  if (t === curTab || !tabLast[t] || tabLast[t] === location.hash) return;   // 照連結回分頁首頁
+  e.preventDefault();
+  location.hash = tabLast[t];
+}));
 $('#back').addEventListener('click', () => { navDepth = Math.max(0, navDepth - 2); history.back(); });
 // 回到頂端：捲過一個半畫面才出現
 const toTop = h('button', { type: 'button', class: 'btn to-top', 'aria-label': '回到頂端', hidden: true, onclick: () => window.scrollTo(0, 0) }, svgIcon('up'));

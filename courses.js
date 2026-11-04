@@ -376,7 +376,7 @@ async function viewLesson(id, qs) {
   await lrec();
   const { lesson: l, course: c, i } = hit;
   const key = l.media && l.media.key;
-  const meta = key ? { key, lessonId: l.id, courseId: c.id } : null;
+  const meta = key ? { key, lessonId: l.id, courseId: c.id, title: `${l.order ? l.order + ' ' : ''}${l.lesson_title || l.title}`, href: '#/lesson/' + encodeURIComponent(l.id) } : null;
   const startT = Number(new URLSearchParams(qs || '').get('t')) || 0;
   const prog = lessonProgress(l);
   const isAudio = l.media && l.media.kind && l.media.kind !== 'mp4';
@@ -699,8 +699,15 @@ async function viewLesson(id, qs) {
     sig.addEventListener('abort', () => ro.disconnect());
   }
   measure();
-  // 看得到逐字稿的範圍：頂列（或黏住的頁籤列）下緣 → 底部分頁列上緣
-  const visTop = () => Math.max(topBar ? topBar.getBoundingClientRect().bottom : 0, tabsEl.getBoundingClientRect().bottom);
+  // 看得到逐字稿的範圍：頂列下緣（iPhone 上再加釘住的播放區與頁籤列）→ 底部分頁列上緣。
+  // 用「釘好之後」的高度算，不用當下的位置：頁面還在最上面時播放區還沒釘住，照當下算會捲過頭
+  //（2026-11-04 本人回報跟隨「跳回更早的時間」，原因之一）
+  const narrow = window.matchMedia('(max-width: 899px)');
+  const visTop = () => {
+    const barH = topBar ? topBar.getBoundingClientRect().height : 0;
+    if (playable && narrow.matches) return barH + left.getBoundingClientRect().height + tabsEl.getBoundingClientRect().height;
+    return Math.max(barH, tabsEl.getBoundingClientRect().bottom);
+  };
   const visBottom = () => { const t = document.querySelector('.tabs'); return t ? t.getBoundingClientRect().top : window.innerHeight; };
   const scrollToSeg = (n, smooth) => {
     const r = n.getBoundingClientRect(), top = visTop(), bot = visBottom();
@@ -732,12 +739,13 @@ async function viewLesson(id, qs) {
       });
     });
   }
-  // 逐字稿跟著播放高亮；手動捲動後 8 秒不搶回；目前那段不在畫面上時出現「回到 hh:mm:ss」
+  // 逐字稿跟著播放高亮：每段開始時捲到段落開頭；手動捲動（只算逐字稿區，learn 同一套）後 8 秒不搶回；
+  // 目前那段不在畫面上時出現「回到 hh:mm:ss」
   let userScrollUntil = 0, active = null;
-  // 點播放區與頁籤列（收起影片、換速度、切頁籤）不算手動捲動，跟隨不暫停
-  const markManual = (e) => { if (e && e.target && e.target.closest && e.target.closest('.lesson-left, .seg-tabs, .bar')) return; userScrollUntil = performance.now() + 8000; };
-  window.addEventListener('touchstart', markManual, { passive: true, signal: sig });
-  window.addEventListener('wheel', markManual, { passive: true, signal: sig });
+  const markManual = () => { userScrollUntil = performance.now() + 8000; };
+  pane.addEventListener('touchstart', markManual, { passive: true, signal: sig });
+  pane.addEventListener('wheel', markManual, { passive: true, signal: sig });
+  const segTimes = () => [...pane.querySelectorAll('.seg[data-t]')].map((n) => ({ n, t: Number(n.dataset.t) })).sort((a, b) => a.t - b.t);
   back.addEventListener('click', () => { userScrollUntil = 0; const n = pane.querySelector('.seg.active'); if (n) scrollToSeg(n, true); back.hidden = true; });
   const tick = setInterval(() => {
     playBtn.hidden = mine();
@@ -750,9 +758,11 @@ async function viewLesson(id, qs) {
     if (Number.isFinite(el.duration)) drawTicks(el.duration);
     endNote.hidden = !el.ended;
     const now = el.currentTime;
-    const segs = [...pane.querySelectorAll('.seg[data-t]')];
-    let found = null;
-    for (const n of segs) { if (Number(n.dataset.t) <= now) found = n; else break; }
+    // 找「不超過現在的最後一段」：依時間排序後找（learn 同一套），不依畫面順序提早停
+    const segs = segTimes();
+    let k = -1;
+    for (let lo = 0, hi = segs.length - 1; lo <= hi;) { const mid = (lo + hi) >> 1; if (segs[mid].t <= now) { k = mid; lo = mid + 1; } else hi = mid - 1; }
+    const found = k >= 0 ? segs[k].n : null;
     if (found !== active) {
       pane.querySelectorAll('.active').forEach((n) => n.classList.remove('active'));
       if (found) { found.classList.add('active'); if (followBox.checked && performance.now() >= userScrollUntil && !el.paused) scrollToSeg(found, true); }

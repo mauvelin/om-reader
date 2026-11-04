@@ -23,6 +23,15 @@ function dockShow(...kids) {
   dock.hidden = false;
   document.body.classList.add('has-dock');
 }
+// 從 App 切換器把 App 滑掉時，頁面被卸下前先停播並記進度（本人 2026-11-04：關掉 App 後聲音還在播）。
+// iOS 有時不給卸下的通知就直接結束；那種情況這裡管不到，只能從鎖定畫面或控制中心按暫停
+window.addEventListener('pagehide', (e) => {
+  if (e.persisted || !PLAYER) return;
+  const el = playerEl();
+  if (!el) return;
+  try { playerProgress(el); } catch (err) { /* 略過 */ }
+  el.pause();
+});
 function playerClose() {
   if (PLAYER) for (const el of [PLAYER.v, PLAYER.a]) { el.pause(); el.removeAttribute('src'); el.load(); }
   if (PLAYER && PLAYER.box) PLAYER.box.remove();   // 借進講次頁時，畫面也一起拿掉（不留一個空的影片框）
@@ -39,7 +48,12 @@ async function playerOpen(file, { t = 0, mode, resumed = false, meta = null } = 
   if (!s.enabled && !file.offline) return;   // 離線影音不需要 Google
   if (PLAYER) playerClose();
   mode = mode || (/^audio\//.test(file.mime || '') ? 'audio' : 'video');
-  const head = h('div', { class: 'dock-head' }, h('span', { class: 'dock-title' }, file.name || '雲端硬碟檔案'),
+  // 小播放器（換到別頁時在底部）：標題是講次或練習名稱，點標題或「回到這一講」回原來那頁（本人 2026-11-04）
+  const backHref = meta && meta.href;
+  const title = (meta && meta.title) || file.name || '雲端硬碟檔案';
+  const head = h('div', { class: 'dock-head' },
+    backHref ? h('a', { class: 'dock-title', href: backHref }, title) : h('span', { class: 'dock-title' }, title),
+    backHref ? h('a', { class: 'btn quiet', href: backHref }, meta.kind === 'practice' ? '回到這一支' : '回到這一講') : null,
     h('button', { type: 'button', class: 'btn quiet', onclick: playerClose }, '關閉'));
   if (!file.offline && (!gHasToken() || gMinutesLeft() < RENEW_BEFORE_MIN)) {   // 開播前先續期，播到一半才不會斷
     const go = h('button', { type: 'button', class: 'btn primary' }, gHasToken() ? '先續期 Google 登入再播' : '登入 Google 再播');
@@ -67,7 +81,17 @@ async function playerOpen(file, { t = 0, mode, resumed = false, meta = null } = 
     el.addEventListener('playing', setupMediaSession);
     el.addEventListener('timeupdate', () => { if (PLAYER && el === playerEl() && el.readyState >= 1) PLAYER.lastT = el.currentTime; });
     el.addEventListener('error', () => { if (el === playerEl()) note.textContent = `播放失敗（錯誤碼 ${el.error && el.error.code}）。可改用「雲端硬碟」開啟。`; });
-    el.addEventListener('loadedmetadata', () => { el.playbackRate = Number(playerRate()) || 1; });
+    el.addEventListener('loadedmetadata', () => { el.defaultPlaybackRate = el.playbackRate = Number(playerRate()) || 1; });
+    // 在播放器本身（例：全螢幕）改速度：記成之後的預設，頁面上的速度選單跟著變（本人 2026-11-04）
+    el.addEventListener('ratechange', () => {
+      if (!PLAYER || el !== playerEl() || el.readyState < 1) return;
+      const r = String(Math.round(el.playbackRate * 100) / 100);
+      if (r !== playerRate()) { try { localStorage.setItem('om-rate', r); } catch (e) { /* 略過 */ } }
+      document.querySelectorAll('.rate-sel').forEach((s) => {
+        if (![...s.options].some((o) => o.value === r)) s.append(h('option', { value: r }, r + '×'));
+        s.value = r;
+      });
+    });
     el.addEventListener('pause', () => playerProgress(el));
     el.addEventListener('ended', () => playerProgress(el));
   }

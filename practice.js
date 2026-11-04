@@ -204,7 +204,7 @@ async function viewPracticeItem(id, qs) {
   const prog = LREC.practice_progress[item.id];
   const status = h('div', { class: 'status', role: 'status' });
   const slot = h('div', { class: 'lesson-slot p-slot' });
-  const meta = { kind: 'practice', itemId: item.id, durationMin: item.duration_min, onLogged: () => { status.textContent = '看到 80%，已記一筆練習紀錄。'; paintDone(); } };
+  const meta = { kind: 'practice', itemId: item.id, durationMin: item.duration_min, title: item.title, href: '#/practice/item/' + encodeURIComponent(item.id) + (qs ? '?' + String(qs).replace(/(^|&)auto=1/, '') : ''), onLogged: () => { status.textContent = '看到 80%，已記一筆練習紀錄。'; paintDone(); } };
   const doneBtn = h('button', { type: 'button', class: 'btn' });
   const paintDone = () => { const today = LREC.practice_log[`${item.id}|${dayKey()}`]; const on = !!(today && !today.deleted); doneBtn.textContent = on ? '✓ 今天練過了' : '✓ 練完了'; doneBtn.disabled = on; };
   doneBtn.addEventListener('click', () => { if (practiceLog(item, (mine() && Number.isFinite(playerEl().duration) ? playerEl().duration / 60 : item.duration_min), 'manual')) status.textContent = '已記一筆練習紀錄。'; paintDone(); });
