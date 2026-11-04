@@ -178,8 +178,18 @@ function lockScreen(title, text, btnLabel, action, extra) {
   const btn = h('button', { type: 'button', class: 'btn primary' }, svgIcon('lock'), btnLabel);
   btn.addEventListener('click', async () => {
     btn.disabled = true; out.textContent = '';
-    try { await action(); route(); }
+    // 顯示走到哪一步；20 秒還沒好就說停在哪一步，並給「重新開啟」（本人 2026-11-04：登入 Google 回來後解鎖卡住）
+    let step = '';
+    unlockStep = (t) => { step = t; out.textContent = t; };
+    const watchdog = setTimeout(() => {
+      if (!out.isConnected) return;
+      out.replaceChildren(`停在「${step || '開始'}」超過 20 秒。${dbBlocked ? '手機上的資料庫被另一個 App 視窗佔著。' : ''}`,
+        h('br'), h('button', { type: 'button', class: 'btn', onclick: () => location.reload() }, '重新開啟'));
+      btn.disabled = false;
+    }, 20000);
+    try { await action(); await route(); }
     catch (e) { out.textContent = '沒有成功：' + (e.name === 'NotAllowedError' ? '取消了，或逾時' : (e.message || e)); btn.disabled = false; }
+    finally { clearTimeout(watchdog); unlockStep = () => {}; }
   });
   setView(h('div', { class: 'lock' }, h('img', { src: 'icons/icon-192.png', alt: '' }), h('h1', null, title),
     text ? h('p', { class: 'muted' }, text) : null, btn, out, extra || null));

@@ -279,7 +279,9 @@ function offButton(spec, onChange) {
     btn.dataset.painted = '1';
     const e = await offGet(spec.key);
     btn.classList.toggle('on', !!(e && e.state === 'done'));
-    btn.textContent = !e ? '下載' : e.state === 'done' ? '✓ 已下載' : e.state === 'paused' ? (e.done ? `繼續 ${offPct(e)}%` : '下載') : e.state === 'queued' ? '排隊中' : `下載 ${offPct(e)}%`;
+    // 講次頁播放中（外層 .compact）只顯示短字：✓／45%／繼續／排隊；完整的字在 title 與同步頁
+    const short = !!btn.closest('.compact');
+    btn.textContent = !e ? '下載' : e.state === 'done' ? (short ? '✓' : '✓ 已下載') : e.state === 'paused' ? (e.done ? (short ? '繼續' : `繼續 ${offPct(e)}%`) : '下載') : e.state === 'queued' ? (short ? '排隊' : '排隊中') : (short ? `${offPct(e)}%` : `下載 ${offPct(e)}%`);
     btn.title = e && e.err ? e.err : e && e.state === 'done' ? `已存在這支手機（${fmtSize(e.size)}）；點一下可刪除` : '下載到這支手機，沒網路也能看、能聽';
     if (onChange) onChange(e);
   };

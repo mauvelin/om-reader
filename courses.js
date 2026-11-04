@@ -423,10 +423,10 @@ async function viewLesson(id, qs) {
   if (!key) mediaNote.textContent = '這一講沒有影音檔。';
   else if (!s.enabled && !offE) mediaNote.append('影音在雲端硬碟。到「同步」頁啟用「雲端硬碟影音」後，就能在這裡播放。');
   // 收起影片：只藏畫面，聲音照播、控制列留著（learn 的做法；每一講開始都是展開的）
-  const fold = h('button', { type: 'button', class: 'btn quiet fold', 'aria-pressed': 'false', hidden: true, title: '收起影片畫面，只聽聲音、逐字稿變高' }, '收起影片');
+  const fold = h('button', { type: 'button', class: 'btn quiet fold', 'aria-pressed': 'false', hidden: true, title: '收起影片畫面，只聽聲音、逐字稿變高' }, '收起');
   fold.addEventListener('click', () => {
     const off = media.classList.toggle('video-off');
-    fold.textContent = off ? '展開影片' : '收起影片';
+    fold.textContent = off ? '展開' : '收起';
     fold.setAttribute('aria-pressed', String(off));
   });
   playBtn.hidden = mine();
@@ -438,6 +438,13 @@ async function viewLesson(id, qs) {
     offSlot.replaceChildren(offButton(wantAudio() ? { ...offSpec, key: alt.name, title: offSpec.title + '（聲音）', driveName: alt.name } : offSpec));
   };
   paintOff();
+  // 要登入才能做的事：訊息旁直接給登入鈕，登入後回到這一講（不用繞去同步頁；本人 2026-11-04）
+  const loginNote = (text) => mediaNote.replaceChildren(text, ' ',
+    h('button', { type: 'button', class: 'btn', onclick: () => gLogin({ returnHash: location.hash }).catch((e) => { mediaNote.textContent = e.message; }) }, '登入 Google'));
+  // 往回／往前 10 秒（本人 2026-11-04：聲音播放器沒有這兩顆；速度選單留著就一起加）：播放中才出現
+  const skip = (d) => h('button', { type: 'button', class: 'btn quiet skip', 'aria-label': d < 0 ? '往回 10 秒' : '往前 10 秒', hidden: true,
+    onclick: () => { const el = playerEl(); if (el) el.currentTime = Math.max(0, Math.min((el.duration || 1e9) - 0.5, el.currentTime + d)); } }, d < 0 ? '−10' : '+10');
+  const back10 = skip(-10), fwd10 = skip(10);
   // 播放中換影片／聲音（本人 2026-11-04：選了聲音之後換不回影片）：佔「收起影片」的位置，從目前的秒數接著播
   const playingAlt = () => !!(alt && PLAYER && PLAYER.file && PLAYER.file.name === alt.name);
   const swap = h('button', { type: 'button', class: 'btn quiet fold', hidden: true });
@@ -445,8 +452,8 @@ async function viewLesson(id, qs) {
     const el = playerEl();
     const t = el ? el.currentTime || 0 : 0;
     const toAudio = !playingAlt();
-    if (!toAudio && !gHasToken() && !(await offDone(key))) { mediaNote.textContent = '影片沒有下載到手機，要登入 Google 才能看。'; return; }
-    if (toAudio && !gHasToken() && !(await offDone(alt.name))) { mediaNote.textContent = '聲音檔沒有下載到手機，要登入 Google 才能聽。'; return; }
+    if (!toAudio && !gHasToken() && !(await offDone(key))) { loginNote('影片沒有下載到手機，要登入 Google 才能看。'); return; }
+    if (toAudio && !gHasToken() && !(await offDone(alt.name))) { loginNote('聲音檔沒有下載到手機，要登入 Google 才能聽。'); return; }
     src = toAudio ? 'audio' : 'video';
     srcSet(c.id, src); paintSrc(); paintOff();
     await startAt(t);
@@ -458,7 +465,7 @@ async function viewLesson(id, qs) {
       h('button', { type: 'button', class: 'filter', 'aria-pressed': String((src === 'audio' && alt ? 'audio' : 'video') === v), onclick: () => { src = v; srcSet(c.id, v); paintSrc(); paintOff(); } }, name)));
     srcRow.hidden = !alt || mine();
   };
-  if (playable) media.append(srcRow, h('div', { class: 'lesson-ctl' }, playBtn, rateSel,
+  if (playable) media.append(srcRow, h('div', { class: 'lesson-ctl' }, playBtn, rateSel, back10, fwd10,
     h('label', { class: 'check follow', for: 'follow', title: '逐字稿跟隨播放' }, followBox, '跟隨'), fold, swap, offSlot));
   if (altKeys.length && s.enabled && gHasToken()) {   // 雲端硬碟上有沒有同名聲音檔：查到再顯示切換（不擋畫面）
     driveAlt(key, l.media.source_file).then((f) => { if (f) alt = { name: f.name, size: f.size }; else if (!altOff) alt = null; paintSrc(); paintOff(); }).catch(() => {});
@@ -751,7 +758,9 @@ async function viewLesson(id, qs) {
     playBtn.hidden = mine();
     fold.hidden = !mine() || PLAYER.mode === 'audio' || !!alt;   // 有聲音檔的講次：改用「改聽聲音」，控制列才放得下一行
     swap.hidden = !mine() || !alt;
-    if (!swap.hidden) swap.textContent = playingAlt() ? '改看影片' : '改聽聲音';
+    if (!swap.hidden) swap.textContent = playingAlt() ? '看影片' : '聽聲音';
+    back10.hidden = fwd10.hidden = !mine();
+    if (offSlot.classList.contains('compact') !== mine()) { offSlot.classList.toggle('compact', mine()); offEmit(null); }   // 播放中下載鈕只留短字，控制列才放得下一行
     srcRow.hidden = !alt || mine();
     if (!mine()) { back.hidden = true; return; }
     const el = playerEl();

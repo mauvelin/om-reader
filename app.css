@@ -370,6 +370,7 @@ label.check input { width: 20px; height: 20px; accent-color: var(--accent); }
 /* 離線音檔 */
 .off-btn.on { color: var(--ink-moss); font-weight: var(--fw-strong); }
 .lesson-ctl .off-btn { padding: 4px 6px; font-variant-numeric: tabular-nums; }
+.lesson-ctl .skip { padding: 4px 4px; min-width: 34px; font-variant-numeric: tabular-nums; }
 .off-course { align-items: center; margin: var(--sp-2) 0 0; }
 .src-row { margin: var(--sp-2) 0 0; gap: 6px; }
 .src-row .filter { min-height: 34px; padding: 2px 12px; }

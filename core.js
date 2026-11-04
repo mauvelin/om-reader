@@ -41,6 +41,7 @@ function extOf(p) { const b = basename(p); const i = b.lastIndexOf('.'); return 
 /* ════════ IndexedDB ════════ */
 const DB_NAME = 'om-reader';
 let dbp = null;
+let dbBlocked = false;
 function db() {
   if (!dbp) dbp = new Promise((resolve, reject) => {
     const r = indexedDB.open(DB_NAME, 3);
@@ -53,6 +54,7 @@ function db() {
       // media：離線影音，<隨機 ID>:<塊序號> → { iv, ct }（每個檔自己的金鑰加密，offline.js）
     };
     r.onsuccess = () => { r.result.onversionchange = () => { r.result.close(); dbp = null; }; resolve(r.result); };
+    r.onblocked = () => { dbBlocked = true; };   // 另一個視窗還開著舊版資料庫：解鎖畫面的卡住說明會用到
     r.onerror = () => reject(r.error);
   });
   return dbp;
@@ -170,14 +172,22 @@ async function checkUpdates() {
 function updateBanner() {
   return h('a', { class: 'note update-note', href: '#/settings' }, `有新資料：${fmtMB(updateInfo.bytes)}。到「同步」下載。`);
 }
+// 解鎖走到哪一步（解鎖畫面顯示；卡住時告訴本人停在哪裡。2026-11-04 本人回報：登入 Google 回來後按解鎖一直卡住）
+let unlockStep = () => {};
 async function unlock() {
+  unlockStep('讀取開啟鎖設定…');
   const lock = await kvGet('lock');
+  unlockStep('等 Face ID…');
   const prf = await prfFromPasskey(lock);
+  unlockStep('解開金鑰…');
   const key = await deriveKey(prf, unb64u(lock.hkdfSalt));
   try { if (td.decode(await open_(lock.check, key)) !== 'om-reader-ok') throw new Error(); }
   catch (e) { throw new Error('金鑰不符：這把通行金鑰不是當初設定的那一把'); }
   KEY = key;
-  for (const f of UNLOCK_HOOKS) { try { await f(); } catch (e) { /* 單一模組失敗不擋解鎖 */ } }
+  unlockStep('接回登入前的頁面…');
+  // 各模組解鎖後的事：單一模組失敗或超過 5 秒都不擋解鎖
+  for (const f of UNLOCK_HOOKS) { try { await Promise.race([f(), new Promise((r) => setTimeout(r, 5000))]); } catch (e) { /* 略過 */ } }
+  unlockStep('開啟頁面…');
   setTimeout(checkUpdates, 1500);
 }
 // 其他模組在上鎖／解鎖時要做的事（例：雲端硬碟模組清掉記憶體裡解密過的檔名快取；登入回來後接回原頁）
