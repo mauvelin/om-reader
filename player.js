@@ -51,15 +51,22 @@ async function playerOpen(file, { t = 0, mode, resumed = false, meta = null } = 
   // 小播放器（換到別頁時在底部）：標題是講次或練習名稱，點標題或「回到這一講」回原來那頁（本人 2026-11-04）
   const backHref = meta && meta.href;
   const title = (meta && meta.title) || file.name || '雲端硬碟檔案';
+  // 講次名稱與四顆圖示同一行（本人 2026-11-04：少佔畫面高度）：回到這一講｜影片／聲音｜雲端硬碟｜關閉
+  const ic = (tag, icon, label, extra) => h(tag, { class: 'btn quiet dock-ic', 'aria-label': label, title: label, ...extra }, svgIcon(icon));
+  const modeBtn = ic('button', 'audio', '聲音模式（可在背景播）', { type: 'button' });
+  const back = meta && meta.kind === 'practice' ? '回到這一支' : '回到這一講';
   const head = h('div', { class: 'dock-head' },
     backHref ? h('a', { class: 'dock-title', href: backHref }, title) : h('span', { class: 'dock-title' }, title),
-    backHref ? h('a', { class: 'btn quiet', href: backHref }, meta.kind === 'practice' ? '回到這一支' : '回到這一講') : null,
-    h('button', { type: 'button', class: 'btn quiet', onclick: playerClose }, '關閉'));
+    backHref ? ic('a', 'return', back, { href: backHref }) : null,
+    modeBtn,
+    ic('a', 'external', '在雲端硬碟開啟', { href: driveViewUrl(file.id), target: '_blank', rel: 'noopener noreferrer' }),
+    ic('button', 'close', '關閉播放器', { type: 'button', onclick: playerClose }));
+  modeBtn.hidden = true;   // 開始播之後才出現
   if (!file.offline && (!gHasToken() || gMinutesLeft() < RENEW_BEFORE_MIN)) {   // 開播前先續期，播到一半才不會斷
     const go = h('button', { type: 'button', class: 'btn primary' }, gHasToken() ? '先續期 Google 登入再播' : '登入 Google 再播');
     go.addEventListener('click', () => gLogin({ returnHash: location.hash, resume: { file, t, mode, meta } }).catch((e) => { note.textContent = e.message; }));
     const note = h('p', { class: 'status' }, gHasToken() ? `登入只剩 ${gMinutesLeft()} 分鐘，播到一半會斷。` : 'Google 登入約一小時失效，需要重新登入。');
-    dockShow(head, note, h('div', { class: 'row' }, go, h('a', { class: 'btn', href: driveViewUrl(file.id), target: '_blank', rel: 'noopener noreferrer' }, svgIcon('external'), '雲端硬碟')));
+    dockShow(head, note, h('div', { class: 'row' }, go));
     return;
   }
   if (file.offline) { const e = Object.values(await offIndex()).find((x) => x.oid === file.offline); if (e) await offArm(e); }
@@ -69,9 +76,10 @@ async function playerOpen(file, { t = 0, mode, resumed = false, meta = null } = 
   // lastT：最後一個可靠的播放位置（重新載入時 currentTime 會先歸零）；positioned：拿到長度並套用起始位置之後才記進度
   PLAYER = { file, mode, v, a, box: null, host: null, adopted: null, meta, positioned: false, hide: null, wantLogin: false, lastT: t };
   const note = h('p', { class: 'status', role: 'status' }, resumed ? `已重新登入，接回 ${fmtClock(t)}，按播放繼續。` : '');
-  const modeBtn = h('button', { type: 'button', class: 'btn' });
   const paintMode = () => {
-    modeBtn.textContent = PLAYER.mode === 'audio' ? '改回影片' : '聲音模式（可在背景播）';
+    const label = PLAYER.mode === 'audio' ? '改回影片' : '聲音模式（可在背景播）';
+    modeBtn.replaceChildren(svgIcon(PLAYER.mode === 'audio' ? 'video' : 'audio'));
+    modeBtn.setAttribute('aria-label', label); modeBtn.title = label;
     modeBtn.hidden = !!PLAYER.file.offline && /^audio\//.test(PLAYER.file.mime || '');   // 離線的聲音檔沒有影片可切
     v.hidden = PLAYER.mode === 'audio';
     a.hidden = PLAYER.mode !== 'audio';
@@ -97,8 +105,7 @@ async function playerOpen(file, { t = 0, mode, resumed = false, meta = null } = 
   }
   PLAYER.box = h('div', { class: 'dock-media' }, v, a);
   PLAYER.host = h('div', { class: 'dock-host' }, PLAYER.box);
-  dockShow(head, PLAYER.host, note,
-    h('div', { class: 'row' }, modeBtn, h('a', { class: 'btn', href: driveViewUrl(file.id), target: '_blank', rel: 'noopener noreferrer' }, svgIcon('external'), '雲端硬碟')));
+  dockShow(head, PLAYER.host, note);
   paintMode();
   playerLoad(playerEl(), t);
   // 講次頁認得自己的播放器：檔名、雲端硬碟 ID，或同一講的聲音檔名（alt）

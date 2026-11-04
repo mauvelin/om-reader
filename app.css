@@ -330,7 +330,12 @@ a.update-note { display: block; color: var(--fg); text-decoration: none; margin-
 }
 .dock-head { display: flex; align-items: center; gap: var(--sp-2); }
 .dock-title { flex: 1; min-width: 0; font-size: var(--fs-chip); font-weight: var(--fw-strong); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg); text-decoration: none; }
+.dock-head { gap: 2px; }
 .dock-head .btn { min-height: 36px; padding: 2px 10px; }
+.dock-head .dock-ic { min-width: 38px; padding: 0 7px; }
+.dock-head .dock-ic .i { width: 22px; height: 22px; }
+.dock .status:empty { display: none; }
+.dock-media { margin-top: var(--sp-1); }
 .dock-media video { display: block; width: 100%; max-height: 34vh; background: #000; }
 .dock-media audio { display: block; width: 100%; }
 .dock .row { margin: var(--sp-2) 0 0; }
