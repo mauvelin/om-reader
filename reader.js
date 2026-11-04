@@ -245,7 +245,8 @@ function areaChip(area) {
 }
 let restoreOnOpen = null;   // 從「繼續看／看過」點進去時，回到上次讀到的位置
 function itemLink(d, extra, opts) {
-  const kind = typeof docKindOf === 'function' ? docKindOf(d.p) : null;   // 逐字稿、講義…：標在標題旁
+  const kind0 = typeof docKindOf === 'function' ? docKindOf(d.p) : null;   // 逐字稿、講義…：標在標題旁
+  const kind = kind0 && !docTitle(d).endsWith(kind0.label) && !docTitle(d).endsWith(kind0.label + '）') ? kind0 : null;   // 標題已經寫了（「…（逐字稿）」）就不重複
   const a = h('a', { class: 'item', href: pageHref(d.p) + (opts && opts.q ? '?q=' + encodeURIComponent(opts.q) : '') },
     h('span', { class: 't' }, docTitle(d), kind ? h('span', { class: 'kind-tag' }, kind.label) : null), h('span', { class: 'm' }, docMeta(d)), extra || null);
   if (opts && opts.resume) a.addEventListener('click', () => { restoreOnOpen = d.p; });
