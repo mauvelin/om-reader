@@ -438,7 +438,20 @@ async function viewLesson(id, qs) {
     offSlot.replaceChildren(offButton(wantAudio() ? { ...offSpec, key: alt.name, title: offSpec.title + '（聲音）', driveName: alt.name } : offSpec));
   };
   paintOff();
-  // 「影片｜聲音」切換：還沒開始播時才出現（播放中要聽聲音可以改用播放器的聲音模式）
+  // 播放中換影片／聲音（本人 2026-11-04：選了聲音之後換不回影片）：佔「收起影片」的位置，從目前的秒數接著播
+  const playingAlt = () => !!(alt && PLAYER && PLAYER.file && PLAYER.file.name === alt.name);
+  const swap = h('button', { type: 'button', class: 'btn quiet fold', hidden: true });
+  swap.addEventListener('click', async () => {
+    const el = playerEl();
+    const t = el ? el.currentTime || 0 : 0;
+    const toAudio = !playingAlt();
+    if (!toAudio && !gHasToken() && !(await offDone(key))) { mediaNote.textContent = '影片沒有下載到手機，要登入 Google 才能看。'; return; }
+    if (toAudio && !gHasToken() && !(await offDone(alt.name))) { mediaNote.textContent = '聲音檔沒有下載到手機，要登入 Google 才能聽。'; return; }
+    src = toAudio ? 'audio' : 'video';
+    srcSet(c.id, src); paintSrc(); paintOff();
+    await startAt(t);
+  });
+  // 「影片｜聲音」切換：還沒開始播時出現；播放中改用控制列上的「改聽聲音／改看影片」
   const srcRow = h('div', { class: 'seg-tabs src-row', role: 'group', 'aria-label': '播放影片或聲音', hidden: true });
   const paintSrc = () => {
     srcRow.replaceChildren(...[['video', '影片'], ['audio', alt && alt.size ? `聲音（${fmtSize(alt.size)}）` : '聲音']].map(([v, name]) =>
@@ -446,7 +459,7 @@ async function viewLesson(id, qs) {
     srcRow.hidden = !alt || mine();
   };
   if (playable) media.append(srcRow, h('div', { class: 'lesson-ctl' }, playBtn, rateSel,
-    h('label', { class: 'check follow', for: 'follow', title: '逐字稿跟隨播放' }, followBox, '跟隨'), fold, offSlot));
+    h('label', { class: 'check follow', for: 'follow', title: '逐字稿跟隨播放' }, followBox, '跟隨'), fold, swap, offSlot));
   if (altKeys.length && s.enabled && gHasToken()) {   // 雲端硬碟上有沒有同名聲音檔：查到再顯示切換（不擋畫面）
     driveAlt(key, l.media.source_file).then((f) => { if (f) alt = { name: f.name, size: f.size }; else if (!altOff) alt = null; paintSrc(); paintOff(); }).catch(() => {});
   }
@@ -728,7 +741,9 @@ async function viewLesson(id, qs) {
   back.addEventListener('click', () => { userScrollUntil = 0; const n = pane.querySelector('.seg.active'); if (n) scrollToSeg(n, true); back.hidden = true; });
   const tick = setInterval(() => {
     playBtn.hidden = mine();
-    fold.hidden = !mine() || PLAYER.mode === 'audio';
+    fold.hidden = !mine() || PLAYER.mode === 'audio' || !!alt;   // 有聲音檔的講次：改用「改聽聲音」，控制列才放得下一行
+    swap.hidden = !mine() || !alt;
+    if (!swap.hidden) swap.textContent = playingAlt() ? '改看影片' : '改聽聲音';
     srcRow.hidden = !alt || mine();
     if (!mine()) { back.hidden = true; return; }
     const el = playerEl();
