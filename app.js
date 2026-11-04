@@ -235,7 +235,7 @@ async function route() {
     if (hash.startsWith('#/browse')) await viewBrowse();
     else if (hash.startsWith('#/history')) await viewHistory(hash.split('?')[1] || '');
     else if (hash.startsWith('#/courses')) { const cat = await catalog(); if (!cat) await emptyState(); else await viewCourses(cat, 'self/resources'); }
-    else if (hash.startsWith('#/p/')) await viewPage(dec(hash.slice(4)));
+    else if (hash.startsWith('#/p/')) { const [p, qs] = hash.slice(4).split('?'); await viewPage(dec(p), new URLSearchParams(qs || '').get('q') || ''); }
     else if (hash.startsWith('#/l/')) await viewLane(dec(hash.slice(4)));
     else if (hash.startsWith('#/practice/item/')) { const [id, qs] = hash.slice(16).split('?'); await viewPracticeItem(decodeURIComponent(id), qs); }
     else if (hash.startsWith('#/practice')) await viewPractice(hash.split('?')[1] || '');

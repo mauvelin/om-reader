@@ -11,6 +11,7 @@ let LREC = null;      // { progress: { media.key: {t_s, duration_s, completed, a
 let LEXPORT = null;    // learn-export.json（learn → App）：首頁分組、概念引用（規格：learn repo docs/om-app-contract.md §1）
 let lexportChecked = false;
 LOCK_HOOKS.push(() => { COURSES = null; LREC = null; LEXPORT = null; });
+function coursesReset() { COURSES = null; TERM_PAGES = null; }   // 同步完新資料時（core.js resetCaches）
 
 // 讀 learn 匯出到雲端硬碟「OM App/learn-export.json」的檔：先用手機上的加密快取；有登入時每次開 App 比對一次
 // 雲端硬碟上的版本（md5），變了才重新下載。沒登入、離線、沒權限都照用快取。
@@ -310,8 +311,23 @@ async function viewCourseById(id, qs) {
     hasAlt = (await Promise.all(first.map((x) => driveAlt(x.key, x.src).catch(() => null)))).some(Boolean);
   }
   const offRow = offSpecs.length && gs.enabled ? offCourseRow(offSpecs, allAudio ? '音檔' : '影音', hasAlt ? { courseId: c.id } : {}) : null;
-  setView(head, h('div', { class: 'chips' }, c.category ? areaChip(c.category) : null), sub, offRow, tabBar(tabs, cur, show), pane);
+  setView(head, h('div', { class: 'chips' }, c.category ? areaChip(c.category) : null), sub, offRow, courseBookmarkRow(c), tabBar(tabs, cur, show), pane);
   show(cur);
+}
+// 「複製本課全部書籤」（learn 課程頁同一顆）：照講次順序、同一講照時間，一行一筆，格式同單講的「複製成筆記格式」
+function courseBookmarkRow(c) {
+  const order = new Map(c.lessons.map((l, i) => [l.id, i]));
+  const rows = () => Object.entries(LREC.bookmarks).filter(([, b]) => !b.deleted && order.has(b.lesson_id))
+    .map(([uid, b]) => ({ uid, ...b })).sort((a, b) => order.get(a.lesson_id) - order.get(b.lesson_id) || a.t_s - b.t_s);
+  const n = rows().length;
+  if (!n) return null;
+  const status = h('p', { class: 'status', role: 'status' });
+  const btn = h('button', { type: 'button', class: 'btn', onclick: async () => {
+    const xs = rows();
+    const txt = xs.map((b) => bookmarkLine(c.lessons[order.get(b.lesson_id)], b)).join('\n');
+    status.textContent = (await copyText(txt)) ? `已複製 ${xs.length} 行（${new Set(xs.map((b) => b.lesson_id)).size} 講），貼到 Notion 的課程筆記即可。` : '自動複製失敗：' + txt;
+  } }, `複製本課全部書籤（${n}）`);
+  return h('div', null, h('div', { class: 'row' }, btn), status);
 }
 // 講次：多梯次依系列分組；章（NN.NN 的 NN）一列標題，帶該章講義；每講列尾 ✓ 或看到幾成
 function courseLessons(c) {
@@ -656,19 +672,21 @@ async function viewLesson(id, qs) {
         input.addEventListener('keydown', (e) => { if (e.key === 'Enter') input.blur(); });
         const del = h('button', { type: 'button', class: 'btn quiet', 'aria-label': '刪除這個書籤', onclick: () => { LREC.bookmarks[b.uid] = { deleted: true, at: new Date().toISOString() }; lrecSave(); render(); } }, '刪除');
         return h('li', { class: 'bookmark' }, seekBtn(Math.floor(b.t_s)), input, del);
-      }) : [h('li', { class: 'muted' }, '還沒有書籤。播放時按「＋ 在這裡加書籤」。')]));
+      }) : [h('li', { class: 'muted' }, '還沒有書籤。按「＋ 加書籤」：播放中加在正在播的那一秒；沒在播時點一段逐字稿，加在那一段的開頭。')]));
       wireSeek(list);
+      if (focusUid) {   // 剛加的那一筆：游標放進它的輸入框
+        const row = rows.findIndex((b) => b.uid === focusUid);
+        focusUid = null;
+        const inp = row >= 0 ? list.querySelectorAll('.bookmark-text')[row] : null;
+        if (inp) requestAnimationFrame(() => inp.focus());
+      }
     };
     const add = h('button', { type: 'button', class: 'btn primary', onclick: () => {
-      if (!mine()) { status.textContent = '要先播放這一講，才知道書籤落在哪一秒。'; return; }
-      const uid = crypto.randomUUID ? crypto.randomUUID() : gRandom();
-      const now = new Date().toISOString();
-      bookmarkPut(uid, { lesson_id: l.id, course_id: c.id, t_s: Math.round(playerEl().currentTime * 10) / 10, text: '', created_at: now });
-      render();
-      const inputs = list.querySelectorAll('.bookmark-text');
-      const row = [...list.querySelectorAll('.bookmark')].find((li) => li.querySelector('.ts') && Number(li.querySelector('.ts').dataset.seek) === Math.floor(LREC.bookmarks[uid].t_s));
-      (row ? row.querySelector('.bookmark-text') : inputs[inputs.length - 1]).focus();
-    } }, '＋ 在這裡加書籤');
+      if (mine()) { addBookmarkAt(Math.round(playerEl().currentTime * 10) / 10); render(); return; }
+      // 沒在播：到逐字稿點一段（本人 2026-11-04，只讀不播也能加）
+      if (!tabs.some((t) => t[0] === 'transcript')) { status.textContent = '這一講沒有逐字稿，要先播放才知道書籤落在哪一秒。'; return; }
+      startPick();
+    } }, '＋ 加書籤');
     const copy = h('button', { type: 'button', class: 'btn', onclick: async () => {
       const rows = bookmarksOf(l.id);
       if (!rows.length) { status.textContent = '這一講還沒有書籤可以複製。'; return; }
@@ -679,7 +697,41 @@ async function viewLesson(id, qs) {
     return h('div', null, h('div', { class: 'row' }, add, copy), status, list);
   };
   const back = h('button', { type: 'button', class: 'btn back-current', hidden: true });
+  // 加書籤：鍵＝新的 uid；focusUid 讓書籤分頁重畫時把游標放進這一筆
+  let focusUid = null;
+  const addBookmarkAt = (t) => {
+    const uid = crypto.randomUUID ? crypto.randomUUID() : gRandom();
+    bookmarkPut(uid, { lesson_id: l.id, course_id: c.id, t_s: t, text: '', created_at: new Date().toISOString() });
+    focusUid = uid;
+    return uid;
+  };
+  // 選段落加書籤：切到逐字稿，點哪一段就加在那一段的開頭；換分頁或按「取消」就結束
+  let pickHint = null;
+  const endPick = () => { pane.classList.remove('picking'); if (pickHint) { pickHint.remove(); pickHint = null; } };
+  const goTab = async (k) => {
+    tabsEl.querySelectorAll('button').forEach((b, j) => b.setAttribute('aria-pressed', String(tabs[j][0] === k)));
+    await show(k);
+  };
+  const startPick = async () => {
+    await goTab('transcript');
+    if (!pane.querySelector('.seg[data-t]')) { endPick(); return; }
+    pane.classList.add('picking');
+    pickHint = h('div', { class: 'pick-hint', role: 'status' }, h('span', null, '點一段逐字稿，書籤就加在那一段的開頭。'),
+      h('button', { type: 'button', class: 'btn', onclick: () => { endPick(); goTab('bookmarks'); } }, '取消'));
+    document.body.append(pickHint);
+    sig.addEventListener('abort', endPick, { once: true });
+  };
+  pane.addEventListener('click', (e) => {
+    if (!pane.classList.contains('picking')) return;
+    const seg = e.target.closest('.seg[data-t]');
+    if (!seg) return;
+    e.preventDefault(); e.stopPropagation();   // 點到段落裡的時間戳也算選這一段，不開始播放
+    addBookmarkAt(Number(seg.dataset.t));
+    endPick();
+    goTab('bookmarks');
+  }, true);
   const show = async (k) => {
+    endPick();
     setQs('tab', k === 'transcript' ? null : k);
     pane.replaceChildren(await panes[k]());
     wireSeek(pane);
@@ -1028,6 +1080,40 @@ async function conceptCites(d) {
   return { linkify, where };
 }
 // 文章頁上的逐字稿：給一個「講次頁」按鈕（課程索引已載入時）
+// 逐字稿路徑 → 講次（全站搜尋用：命中逐字稿就連到那一講的那一秒）
+async function transcriptLessons() {
+  const ci = await courseIndex();
+  if (!ci) return null;
+  if (!ci.byTranscript) {
+    ci.byTranscript = new Map();
+    for (const x of ci.lessonById.values()) if (x.lesson.transcript) ci.byTranscript.set(vp(x.lesson.transcript.md), x);
+  }
+  return ci.byTranscript;
+}
+// 逐字稿正文裡同時含所有詞的行：回傳第一處的秒數與那一行，加上總共幾處（courseSearch 的逐行規則）
+function transcriptHits(text, terms, lesson) {
+  const tl = terms.map((t) => t.toLowerCase());
+  const lines = LearnText.splitlines(text || '');
+  const start = (lesson.transcript && lesson.transcript.body_start_line) || 1;
+  let t = null, first = null, n = 0;
+  for (let i = 1; i <= lines.length; i++) {
+    const m = STAMP_RE.exec(lines[i - 1]);
+    if (m) t = (+m[1]) * 3600 + (+m[2]) * 60 + (+m[3]);
+    if (i < start) continue;
+    const low = lines[i - 1].toLowerCase();
+    if (!tl.every((x) => low.includes(x))) continue;
+    n++;
+    if (!first) first = { t: t || 0, text: lines[i - 1].replace(STAMP_RE, '') };
+  }
+  return first ? { ...first, n } : null;
+}
+function lessonHitLink(x, hit, terms) {
+  const l = x.lesson;
+  return h('li', null, areaColor(h('a', { class: 'item', href: `#/lesson/${encodeURIComponent(l.id)}?t=${hit.t}` },
+    h('span', { class: 't' }, `${l.order ? l.order + '　' : ''}${l.lesson_title || l.title}`),
+    h('span', { class: 'm' }, `講次・${x.course.title}・${clock(hit.t)}${hit.n > 1 ? `・這一講共 ${hit.n} 處` : ''}`),
+    markTerms(hit.text, terms.map((t) => t.toLowerCase()))), null, x.course.category));
+}
 function lessonLinkFor(p) {
   if (!COURSES) return null;
   for (const [id, x] of COURSES.lessonById) if (x.lesson.transcript && vp(x.lesson.transcript.md) === p) return '#/lesson/' + id;

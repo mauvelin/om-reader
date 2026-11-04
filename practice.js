@@ -298,6 +298,7 @@ async function viewPracticeItem(id, qs) {
     }
     if (!quiet) pstore('om-mat-mode', true);
     document.body.classList.add('mat-open');
+    matWake();
     if (!ui) {
       ui = h('div', { class: 'mat-ui' },
         h('div', { class: 'mat-top' }, h('button', { type: 'button', class: 'btn mat-btn', 'aria-label': '離開墊旁模式', onclick: () => matMode(false) }, svgIcon('back')), h('strong', null, item.title)),
@@ -327,7 +328,6 @@ async function viewPracticeItem(id, qs) {
       });
       ui.querySelector('.mat-seek').addEventListener('input', (e) => { const el = playerEl(); if (el && Number.isFinite(el.duration)) el.currentTime = (Number(e.target.value) / 1000) * el.duration; });
       wake();
-      if ('wakeLock' in navigator) navigator.wakeLock.request('screen').then((w) => { window.__wake = w; }).catch(() => {});
     }
     matPaint();
   }
@@ -351,3 +351,11 @@ async function viewPracticeItem(id, qs) {
     if (!el && !ui.querySelector('.mat-status').textContent) matStatus(s.enabled && gHasToken() ? '按播放開始。' : '要先在「同步」頁啟用雲端硬碟影音並登入。');
   }
 }
+
+// 墊旁模式的螢幕常亮：iOS 在 App 進背景時會自動放掉，回到前景時還在墊旁模式就重要一次
+function matWake() {
+  if (!('wakeLock' in navigator) || !document.body.classList.contains('mat-open')) return;
+  if (window.__wake && !window.__wake.released) return;
+  navigator.wakeLock.request('screen').then((w) => { window.__wake = w; }).catch(() => {});
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') matWake(); });

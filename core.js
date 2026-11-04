@@ -411,7 +411,10 @@ let LINKS = null;        // { out: Map, back: Map }
 const shardCache = new Map();
 const indexCache = new Map();
 let blobUrls = [];   // 目前畫面的 blob URL；畫面進返回快取時整桶帶走
-function resetCaches() { CAT = null; LINKS = null; INDEX_META = null; shardCache.clear(); indexCache.clear(); clearViewCache(); }
+function resetCaches() {
+  CAT = null; LINKS = null; INDEX_META = null; shardCache.clear(); indexCache.clear(); clearViewCache();
+  if (typeof coursesReset === 'function') coursesReset();   // 課程索引也跟著新資料重讀（courses.js）
+}
 
 async function fileBlob(path) {
   const r = await idbGet('files', path);

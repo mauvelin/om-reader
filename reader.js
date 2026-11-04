@@ -245,7 +245,7 @@ function areaChip(area) {
 }
 let restoreOnOpen = null;   // 從「繼續看／看過」點進去時，回到上次讀到的位置
 function itemLink(d, extra, opts) {
-  const a = h('a', { class: 'item', href: pageHref(d.p) },
+  const a = h('a', { class: 'item', href: pageHref(d.p) + (opts && opts.q ? '?q=' + encodeURIComponent(opts.q) : '') },
     h('span', { class: 't' }, docTitle(d)), h('span', { class: 'm' }, docMeta(d)), extra || null);
   if (opts && opts.resume) a.addEventListener('click', () => { restoreOnOpen = d.p; });
   return h('li', null, areaColor(a, d));
@@ -265,24 +265,47 @@ function laneCounts(cat) {
 }
 
 /* ════════ 看過（存在 kv、加密） ════════ */
-async function getHistory() {
+// 每筆 { p, at（毫秒）, y（這台的捲動位置）, f（讀到全文的幾分之幾，換裝置用）}；清除寫成 { p, at, deleted: true }，
+// 和其他手機、平板經由雲端硬碟「OM App/閱讀/」同步（records.js readsSync）
+const HIST_MAX = 100;
+async function getHistoryAll() {
   const rec = await kvGet('history');
   if (!rec || !KEY) return [];
-  try { return JSON.parse(td.decode(await open_(rec))); } catch (e) { return []; }
+  try { const x = JSON.parse(td.decode(await open_(rec))); return Array.isArray(x) ? x : []; } catch (e) { return []; }
+}
+async function getHistory() { return (await getHistoryAll()).filter((x) => !x.deleted); }
+// 依時間新到舊；留最近 100 頁，刪除標記只留比第 100 頁還新的（更舊的就算被帶回來也排不進前 100 頁）
+function histTrim(list) {
+  list.sort((a, b) => b.at - a.at);
+  const live = list.filter((x) => !x.deleted).slice(0, HIST_MAX);
+  const floor = live.length >= HIST_MAX ? live[live.length - 1].at : -Infinity;
+  const keep = new Set(live);
+  return list.filter((x) => keep.has(x) || (x.deleted && x.at >= floor)).slice(0, HIST_MAX * 3);
+}
+async function setHistory(list, touch = true) {
+  await kvSet('history', await seal(te.encode(JSON.stringify(histTrim(list)))));
+  if (touch && typeof recTouch === 'function') recTouch('reads');
 }
 async function pushHistory(p) {
-  const old = await getHistory();
-  const prevEntry = old.find((x) => x.p === p);
+  const old = await getHistoryAll();
+  const prev = old.find((x) => x.p === p && !x.deleted);
   const list = old.filter((x) => x.p !== p);
-  list.unshift({ p, at: Date.now(), y: prevEntry ? prevEntry.y : 0 });
-  await kvSet('history', await seal(te.encode(JSON.stringify(list.slice(0, 100)))));
+  list.unshift({ p, at: Date.now(), y: prev ? prev.y || 0 : 0, f: prev ? prev.f || 0 : 0 });
+  await setHistory(list);
 }
 async function savePos(p, y) {
-  const list = await getHistory();
-  const e = list.find((x) => x.p === p);
+  const list = await getHistoryAll();
+  const e = list.find((x) => x.p === p && !x.deleted);
   if (!e || Math.abs((e.y || 0) - y) < 200) return;
+  const span = Math.max(1, document.documentElement.scrollHeight - window.innerHeight);
   e.y = Math.round(y);
-  await kvSet('history', await seal(te.encode(JSON.stringify(list))));
+  e.f = Math.round(Math.min(1, y / span) * 1000) / 1000;
+  e.at = Date.now();   // 讀到的位置也要同步：位置變了就算一次新的紀錄
+  await setHistory(list);
+}
+async function clearHistory() {
+  const now = Date.now();
+  await setHistory((await getHistoryAll()).map((x) => ({ p: x.p, at: x.deleted ? x.at : now, deleted: true })));
 }
 
 /* ════════ 畫面 ════════ */
@@ -301,7 +324,7 @@ let curHash = null;
 const CACHEABLE = /^#\/(p|l|s|c)\/|^#\/browse/;
 function stashView() {
   if (typeof playerRelease === 'function') playerRelease();
-  if (curHash && curHash.startsWith('#/p/') && KEY) savePos(dec(curHash.slice(4)), window.scrollY).catch(() => {});
+  if (curHash && curHash.startsWith('#/p/') && KEY) savePos(dec(curHash.slice(4).split('?')[0]), window.scrollY).catch(() => {});
   if (curHash && CACHEABLE.test(curHash) && view.childNodes.length) {
     viewCache.delete(curHash);
     viewCache.set(curHash, { nodes: [...view.childNodes], scroll: window.scrollY, urls: blobUrls });
@@ -455,12 +478,12 @@ async function viewHistory(qs) {
   const label = (k) => (k === today ? '今天' : k === today - 86400000 ? '昨天' : new Date(k).toLocaleDateString('zh-TW', { month: 'numeric', day: 'numeric', weekday: 'short' }));
   const groups = new Map();
   for (const r of shown) { const k = dayKey(r.at); if (!groups.has(k)) groups.set(k, []); groups.get(k).push(r); }
-  const kids = [h('h1', null, '看過'), h('p', { class: 'page-sub' }, '筆記的紀錄只存在這支手機（加密，最近 100 頁）；講次與練習來自學習紀錄，會和電腦、其他裝置同步。'), chips];
+  const kids = [h('h1', null, '看過'), h('p', { class: 'page-sub' }, '筆記的紀錄是最近 100 頁，和其他手機、平板同步（不送到電腦的 learn）；講次與練習來自學習紀錄，會和電腦、其他裝置同步。'), chips];
   if (!shown.length) kids.push(h('p', { class: 'empty-box' }, '還沒有看過任何東西。'));
   for (const [k, xs] of groups) kids.push(secTitle(label(k)), listOf(xs.map((r) => r.li())));
   if ((want === 'all' || want === 'note') && rows.some((r) => r.k === 'note')) {
     const clear = h('button', { type: 'button', class: 'btn quiet' }, '清除筆記的閱讀紀錄');
-    clear.addEventListener('click', async () => { await kvSet('history', await seal(te.encode('[]'))); viewHistory(qs); });
+    clear.addEventListener('click', async () => { await clearHistory(); viewHistory(qs); });
     kids.push(h('div', { class: 'row' }, clear));
   }
   setView(...kids);
@@ -531,7 +554,7 @@ function notionButtons(nid) {
   return [h('a', { class: 'btn', href: notionUrl(nid), target: '_blank', rel: 'noopener noreferrer' }, svgIcon('external'), 'Notion')];
 }
 
-async function viewPage(path) {
+async function viewPage(path, q) {
   const cat = await catalog();
   if (!cat) return emptyState();
   const d = cat.byPath.get(path);
@@ -641,11 +664,66 @@ async function viewPage(path) {
   }
   setView(...kids);
   hydrateMedia(view);
+  if (q) findBar(body, q);   // 從搜尋結果進來：標出命中的詞、捲到第一處
   if (restoreOnOpen === d.p) {
     restoreOnOpen = null;
     const e = (await getHistory()).find((x) => x.p === d.p);
+    // 這台讀的用原本的捲動位置；別台讀的（只有 f）照全文比例換算，iPhone 與 iPad 的版面寬度不同
     if (e && e.y) requestAnimationFrame(() => window.scrollTo(0, e.y));
+    else if (e && e.f) requestAnimationFrame(() => window.scrollTo(0, e.f * Math.max(0, document.documentElement.scrollHeight - window.innerHeight)));
   }
+}
+// 在畫面裡標出查詢詞（每個詞都標，不分大小寫）；回傳所有 <mark>，照出現順序
+function markHits(root, terms) {
+  const esc = terms.filter(Boolean).map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  if (!esc.length) return [];
+  const re = new RegExp(`(${esc.join('|')})`, 'ig');
+  const has = new RegExp(esc.join('|'), 'i');   // 判斷用不帶 g 的版本（帶 g 的 test 會記住位置，漏掉下一個節點）
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, { acceptNode: (n) =>
+    (n.parentElement && n.parentElement.closest('script,style,mark,button,select,.find-bar') ? NodeFilter.FILTER_REJECT
+      : n.nodeValue && has.test(n.nodeValue) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT) });
+  const nodes = [];
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) nodes.push(n);
+  const marks = [];
+  for (const n of nodes) {
+    re.lastIndex = 0;
+    const frag = document.createDocumentFragment();
+    n.nodeValue.split(re).forEach((part, k) => {
+      if (!part) return;
+      if (k % 2) { const m = h('mark', { class: 'hit' }, part); marks.push(m); frag.append(m); } else frag.append(part);
+    });
+    n.replaceWith(frag);
+  }
+  return marks;
+}
+// 頁內搜尋列：「詞」第幾處／共幾處、上一處、下一處、關閉；黏在頂列下方
+function findBar(body, q) {
+  const marks = markHits(body, q.trim().split(/\s+/));
+  if (!marks.length) return;
+  let cur = 0;
+  const count = h('span', { class: 'find-n', role: 'status' });
+  const bar = h('div', { class: 'find-bar' }, h('span', { class: 'find-q' }, `「${q.trim()}」`), count);
+  const go = (i) => {
+    marks[cur].classList.remove('cur');
+    cur = (i + marks.length) % marks.length;
+    const m = marks[cur];
+    m.classList.add('cur');
+    for (let p = m.parentElement; p; p = p.parentElement) if (p.tagName === 'DETAILS' && !p.open) p.open = true;
+    count.textContent = `${cur + 1}／${marks.length}`;
+    const top = document.querySelector('.bar');
+    const off = (top ? top.getBoundingClientRect().height : 0) + bar.getBoundingClientRect().height;
+    window.scrollTo({ top: Math.max(0, m.getBoundingClientRect().top + window.scrollY - off - window.innerHeight * 0.25) });
+  };
+  bar.append(
+    h('button', { type: 'button', class: 'btn find-ic up', 'aria-label': '上一處', onclick: () => go(cur - 1) }, svgIcon('down')),
+    h('button', { type: 'button', class: 'btn find-ic', 'aria-label': '下一處', onclick: () => go(cur + 1) }, svgIcon('down')),
+    h('button', { type: 'button', class: 'btn find-ic', 'aria-label': '關閉頁內搜尋', onclick: () => {
+      marks.forEach((m) => m.replaceWith(m.textContent)); bar.remove();
+    } }, svgIcon('close')));
+  body.before(bar);
+  const top = document.querySelector('.bar');
+  bar.style.top = (top ? top.getBoundingClientRect().height : 0) + 'px';
+  requestAnimationFrame(() => go(0));
 }
 // 非本人陳述的段落標示（SCHEMA 既有定義，字樣在資料包 catalog.ui.section_labels）
 function labelSections(root, d) {
@@ -781,6 +859,7 @@ async function viewSearch(q) {
   const chipRow = h('div', { class: 'filter-row' });
   const pool = () => (state.lane ? cands.filter((d) => d.l === state.lane) : cands);
   // 逐篇驗證：每個詞都要真的出現在標題或內文（索引是二字組，會有假陽性）
+  const trMap = typeof transcriptLessons === 'function' ? await transcriptLessons().catch(() => null) : null;
   const page = async () => {
     more.hidden = true;
     const all = pool();
@@ -792,7 +871,9 @@ async function viewSearch(q) {
       const title = docTitle(d).toLowerCase();
       if (!sn && !tl.every((x) => title.includes(x))) continue;
       added++; state.shown++;
-      list.append(itemLink(d, sn ? h('span', { class: 'snip' }, ...sn) : null));
+      const lx = trMap && text ? trMap.get(d.p) : null;   // 逐字稿：直接開講次頁的那一秒（本人 2026-11-04）
+      const hit = lx ? transcriptHits(text, terms, lx.lesson) : null;
+      list.append(hit ? lessonHitLink(lx, hit, terms) : itemLink(d, sn ? h('span', { class: 'snip' }, ...sn) : null, { q: q.trim() }));
     }
     info.textContent = `${state.shown} 則${state.cursor < all.length ? `・還有 ${all.length - state.cursor} 則待比對` : ''}`;
     if (!state.shown && state.cursor >= all.length) list.replaceChildren(h('li', { class: 'empty' }, '索引有候選，但沒有一則同時包含所有詞。'));

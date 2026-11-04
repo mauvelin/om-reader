@@ -246,12 +246,17 @@ async function recSyncOnce() {
       RSYNC.lastPush = Date.now();
     }
     st.seen = seen;
+    let reads = null;
+    try { reads = await readsSync(st, device); } catch (e) {   // 閱讀紀錄失敗不影響學習紀錄這一輪
+      RSYNC.dirty = true;
+      reads = { err: e.status === 401 ? 'Google 登入已過期' : (e.message || String(e)) };
+    }
     st.at = Date.now();
     await recSaveState(st);
     RSYNC.lastRead = Date.now();
     const devices = Object.values(seen).filter((x) => x.device && x.device !== device).map((x) => x.device).sort();
-    RSYNC.last = { ok: true, at: st.at, devices, skipped, changed, wrote, device, wroteAt: st.wroteAt || 0 };
-    if (changed && (location.hash === '' || location.hash === '#/') && KEY && typeof viewHome === 'function') viewHome().catch(() => {});
+    RSYNC.last = { ok: true, at: st.at, devices, skipped, changed, wrote, device, wroteAt: st.wroteAt || 0, reads };
+    if ((changed || (reads && reads.changed)) && (location.hash === '' || location.hash === '#/') && KEY && typeof viewHome === 'function') viewHome().catch(() => {});
     return RSYNC.last;
   } catch (e) {
     RSYNC.dirty = true;
@@ -270,10 +275,99 @@ async function recSync() {
   if (RSYNC.again) { RSYNC.again = false; return recSync(); }
   return r;
 }
+/* ── 筆記的閱讀紀錄（看過、讀到哪）：只在手機、平板之間同步，learn 不讀 ──
+   放在另一個資料夾「OM App/閱讀/<device>.json」，不進學習紀錄的契約：紀錄檔的格式很嚴格，
+   多一個區塊 learn 就整份不收（本人 2026-11-04 要同步；這樣做 learn 不必跟著改）。
+   規則照學習紀錄：鍵＝筆記路徑，at 最新者勝出，時間相同時刪除勝出、再依裝置名；每台只寫自己的檔，內容是合併後的全部。
+   { format: 'om-app-reads', version: 1, device, written_at, notes: { "<路徑>": { at, f? } | { deleted: true, at } } }
+   f＝讀到全文的幾分之幾（0–1）；捲動的像素位置各台版面不同，不送出去 */
+const READS_DIR = ['OM App', '閱讀'];
+const readsEntryOk = (e) => recDeleted(e) || (recKeys(e, ['at'], ['f']) && recT(e.at)
+  && (!('f' in e) || (typeof e.f === 'number' && e.f >= 0 && e.f <= 1)));
+function readsCheck(data, stem) {
+  if (!recObj(data)) return '不是 JSON 物件';
+  if (!recKeys(data, ['format', 'version', 'device', 'written_at', 'notes'])) return '欄位不符';
+  if (data.format !== 'om-app-reads' || data.version !== 1) return '格式或版本不認得';
+  if (typeof data.device !== 'string' || !REC_DEVICE_RE.test(data.device) || (stem != null && data.device !== stem)) return '裝置名不合格或和檔名不符';
+  if (!recT(data.written_at) || !recObj(data.notes)) return 'written_at 或 notes 不對';
+  for (const [k, e] of Object.entries(data.notes)) if (!k || k.length > 1024 || !readsEntryOk(e)) return `notes／${k.slice(0, 40)}：欄位不符`;
+  return null;
+}
+const readsToFile = (x) => (x.deleted ? { deleted: true, at: new Date(x.at).toISOString() }
+  : (x.f ? { at: new Date(x.at).toISOString(), f: x.f } : { at: new Date(x.at).toISOString() }));
+async function readsSync(st, device) {
+  st.reads = st.reads || {};
+  const R = st.reads;
+  if (R.folder) {
+    try {
+      const f = await (await gfetch(`${DRIVE}/files/${encodeURIComponent(R.folder)}?fields=id,trashed`)).json();
+      if (f.trashed) R.folder = null;
+    } catch (e) { if (e.status !== 404) throw e; R.folder = null; }
+    if (!R.folder) R.seen = {};
+  }
+  if (!R.folder) R.folder = await driveFolder(READS_DIR);
+  const files = await recList(R.folder);
+  const prevSeen = R.seen || {}, seen = {}, remote = [], skipped = [];
+  for (const f of files) {
+    if (!/\.json$/i.test(f.name) || f.mimeType === D_FOLDER) continue;
+    if (!REC_NAME_RE.test(f.name)) { skipped.push([f.name, '檔名不合格（可能是雲端硬碟的衝突複本）']); continue; }
+    const prev = prevSeen[f.name];
+    if (prev && prev.id === f.id && prev.md5 && prev.md5 === f.md5Checksum) { seen[f.name] = prev; if (prev.bad) skipped.push([f.name, prev.bad]); continue; }
+    let data = null, bad = null;
+    try { data = JSON.parse(await (await driveRead(f.id)).text()); } catch (e) { if (e.status) throw e; bad = '不是完整的 JSON'; }
+    if (!bad) bad = readsCheck(data, f.name.slice(0, -5));
+    seen[f.name] = { id: f.id, md5: f.md5Checksum || '', device: bad ? null : data.device, bad: bad || null };
+    if (bad) skipped.push([f.name, bad]); else if (data.device !== device) remote.push(data);
+  }
+  // 合併：這台的紀錄（含 y）先放，別台勝出的那筆不帶 y（讀的時候照 f 換算）
+  const local = await getHistoryAll();
+  const best = new Map();
+  for (const x of local) {
+    const at = Math.floor(x.at) * 1000;
+    if (!Number.isFinite(at)) continue;
+    const rank = [at, x.deleted ? 1 : 0, device];
+    const b = best.get(x.p);
+    if (!b || recRankGt(rank, b.rank)) best.set(x.p, { rank, x });
+  }
+  let changed = 0;
+  for (const r of remote) {
+    for (const [p, e] of Object.entries(r.notes)) {
+      const rank = [recTime(e.at), e.deleted ? 1 : 0, r.device];
+      const b = best.get(p);
+      if (b && !recRankGt(rank, b.rank)) continue;
+      const at = Math.floor(rank[0] / 1000);
+      best.set(p, { rank, x: e.deleted ? { p, at, deleted: true } : { p, at, f: e.f || 0 } });
+      changed++;
+    }
+  }
+  const list = histTrim([...best.values()].map((v) => v.x));
+  if (changed) await setHistory(list, false);
+  const notes = {};
+  for (const x of list) notes[x.p] = readsToFile(x);
+  const sig = await hex16(te.encode(recStable(notes)));
+  const own = seen[device + '.json'];
+  let wrote = false;
+  if (R.sig !== sig || !own || own.bad) {
+    const body = { format: 'om-app-reads', version: 1, device, written_at: new Date().toISOString(), notes };
+    const err = readsCheck(body, device);
+    if (err) throw new Error('要寫出的閱讀紀錄不合格式（' + err + '）');
+    const text = JSON.stringify(body);
+    let res = null;
+    if (own && own.id) { try { res = await driveUpdate(own.id, text); } catch (e) { if (e.status !== 404) throw e; } }
+    if (!res) res = await driveCreate(R.folder, device + '.json', text);
+    seen[device + '.json'] = { id: res.id, md5: res.md5Checksum || '', device, bad: null };
+    R.sig = sig;
+    wrote = true;
+  }
+  R.seen = seen;
+  const devices = Object.values(seen).filter((x) => x.device && x.device !== device).map((x) => x.device).sort();
+  return { changed, wrote, devices, skipped };
+}
+
 // lrecSave 每次存檔都會叫：進度（kind＝progress）最多每分鐘寫一次，其他變動停手 3 秒後寫
 function recTouch(kind) {
   RSYNC.dirty = true;
-  const wait = kind === 'progress' ? Math.max(REC_SOON_MS, RSYNC.lastPush + REC_PROGRESS_EVERY_MS - Date.now()) : REC_SOON_MS;
+  const wait = kind === 'progress' || kind === 'reads' ? Math.max(REC_SOON_MS, RSYNC.lastPush + REC_PROGRESS_EVERY_MS - Date.now()) : REC_SOON_MS;
   if (RSYNC.timer && RSYNC.timerAt <= Date.now() + wait) return;   // 已排了更早的一次
   clearTimeout(RSYNC.timer);
   RSYNC.timerAt = Date.now() + wait;
@@ -303,12 +397,16 @@ async function recSection() {
       r.wrote ? `這支手機的紀錄已寫入 ${r.device}.json` : `這支手機的變動${r.wroteAt ? `在 ${hhmm(r.wroteAt)} ` : ''}就已自動寫入 ${r.device}.json，沒有新的要寫`];
     out.textContent = parts.join('；') + '。電腦上的 learn 每 5 分鐘讀一次，之後重新整理 learn 的頁面就看得到。';
     if (r.skipped.length) out.append(h('br'), '略過：' + r.skipped.map(([n, why]) => `${n}（${why}）`).join('；'));
+    const rd = r.reads;
+    if (rd) out.append(h('br'), rd.err ? `筆記的閱讀紀錄這次沒同步成功（${rd.err}），下次會重試。`
+      : `筆記的閱讀紀錄：${rd.devices.length ? (rd.changed ? `從 ${rd.devices.join('、')} 併進 ${rd.changed} 筆` : `${rd.devices.join('、')} 沒有新的`) : '還沒有其他手機、平板的紀錄'}${rd.wrote ? `，這支手機的已寫入「閱讀/${r.device}.json」` : ''}。`
+        + (rd.skipped.length ? '略過：' + rd.skipped.map(([n, why]) => `${n}（${why}）`).join('；') : ''));
   };
   show(RSYNC.last);
   const on = h('input', { type: 'checkbox', id: 'rec-on' });
   on.checked = !st.off;
   on.addEventListener('change', async () => { const s = await recState(); s.off = !on.checked; await recSaveState(s); route(); });
-  const onRow = h('label', { class: 'check', for: 'rec-on' }, on, '和電腦（learn）與其他裝置同步學習進度、書籤、最愛、練習紀錄');
+  const onRow = h('label', { class: 'check', for: 'rec-on' }, on, '和電腦（learn）與其他裝置同步學習進度、書籤、最愛、練習紀錄；筆記的閱讀紀錄只和其他手機、平板同步');
   if (st.off) return [secTitle('學習紀錄同步'), h('div', { class: 'card' }, onRow, h('p', { class: 'muted' }, '已關閉：紀錄只存在這支手機。'))];
   const dev = h('input', { id: 'rec-device', type: 'text', autocomplete: 'off', autocapitalize: 'off', spellcheck: 'false', value: st.device, maxlength: '32' });
   const saveDev = h('button', { type: 'button', class: 'btn' }, '儲存裝置名');
@@ -331,6 +429,6 @@ async function recSection() {
   const more = h('details', { class: 'set-more' }, h('summary', null, `設定：開關、裝置名（目前 ${st.device}）`),
     onRow,
     h('div', { class: 'field' }, h('label', { for: 'rec-device' }, '這台裝置的名字（紀錄檔名）'), dev), h('div', { class: 'row' }, saveDev),
-    h('p', { class: 'muted' }, '紀錄放在雲端硬碟「OM App/紀錄/」，每台裝置寫自己的那一個（電腦上的 learn 寫 pc.json）。開 App、回到前景時讀別台的；有變動時寫，播放中的進度最多每分鐘一次。'));
+    h('p', { class: 'muted' }, '紀錄放在雲端硬碟「OM App/紀錄/」，每台裝置寫自己的那一個（電腦上的 learn 寫 pc.json）；筆記的閱讀紀錄放在「OM App/閱讀/」。開 App、回到前景時讀別台的；有變動時寫，播放中的進度與讀到的位置最多每分鐘一次。'));
   return [secTitle('學習紀錄同步'), h('div', { class: 'card' }, out, h('div', { class: 'row' }, now), more)];
 }
