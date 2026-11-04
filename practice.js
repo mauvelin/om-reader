@@ -174,7 +174,7 @@ function practiceLogView(data) {
   const since = dayKey(new Date(Date.now() - 60 * 86400000));
   const recent = rows.filter((r) => r.day >= since);
   const total = recent.reduce((s, r) => s + (r.minutes || 0), 0);
-  const wrap = h('div', null, h('p', { class: 'muted' }, recent.length ? `近 60 天練了 ${recent.length} 次、共 ${total} 分鐘。這支手機上的紀錄；P4 之後會和電腦、其他裝置同步。` : '近 60 天還沒有紀錄。播放時看到 80% 或按「練完了」就會記一筆。'));
+  const wrap = h('div', null, h('p', { class: 'muted' }, recent.length ? `近 60 天練了 ${recent.length} 次、共 ${total} 分鐘。有開學習紀錄同步時，會和電腦（learn）與其他裝置同步。` : '近 60 天還沒有紀錄。播放時看到 80%，或按打勾圖示（練完了），就會記一筆。'));
   let day = null, ul = null;
   for (const r of recent) {
     if (r.day !== day) { day = r.day; wrap.append(secTitle(day)); ul = h('ul', { class: 'list' }); wrap.append(ul); }
@@ -182,7 +182,7 @@ function practiceLogView(data) {
     const del = h('button', { type: 'button', class: 'btn quiet', onclick: () => { LREC.practice_log[r.k] = { deleted: true, at: new Date().toISOString() }; lrecSave(); wrap.replaceWith(practiceLogView(data)); } }, '刪除');
     ul.append(h('li', { class: 'p-logrow' }, h('a', { class: 'item', href: item ? '#/practice/item/' + encodeURIComponent(item.id) : '#/practice' },
       h('span', { class: 't' }, item ? item.title : '（目錄裡已沒有這支）'),
-      h('span', { class: 'm' }, `${r.minutes || '?'} 分・${r.source === 'auto80' ? '看到 80% 自動記' : r.source === 'manual' ? '按「練完了」' : r.source || ''}`)), del));
+      h('span', { class: 'm' }, `${r.minutes || '?'} 分・${r.source === 'auto80' ? '看到 80% 自動記' : r.source === 'manual' ? '手動記' : r.source || ''}`)), del));
   }
   return wrap;
 }
@@ -205,12 +205,16 @@ async function viewPracticeItem(id, qs) {
   const status = h('div', { class: 'status', role: 'status' });
   const slot = h('div', { class: 'lesson-slot p-slot' });
   const meta = { kind: 'practice', itemId: item.id, durationMin: item.duration_min, title: item.title, course: ['練習', item.teacher, item.series].filter(Boolean).join('・'), href: '#/practice/item/' + encodeURIComponent(item.id) + (qs ? '?' + String(qs).replace(/(^|&)auto=1/, '') : ''), onLogged: () => { status.textContent = '看到 80%，已記一筆練習紀錄。'; paintDone(); } };
-  const doneBtn = h('button', { type: 'button', class: 'btn' });
-  const paintDone = () => { const today = LREC.practice_log[`${item.id}|${dayKey()}`]; const on = !!(today && !today.deleted); doneBtn.textContent = on ? '✓ 今天練過了' : '✓ 練完了'; doneBtn.disabled = on; };
+  // 按鈕以圖示為主（本人 2026-11-04，同講次頁）；文字放在 aria-label 與 title
+  const icBtn = (icon, label, extra) => h('button', { type: 'button', class: 'btn quiet p-ic', 'aria-label': label, title: label, ...extra }, svgIcon(icon));
+  const doneBtn = icBtn('done', '練完了：記一筆練習紀錄');
+  const paintDone = () => { const today = LREC.practice_log[`${item.id}|${dayKey()}`]; const on = !!(today && !today.deleted);
+    const label = on ? '今天練過了' : '練完了：記一筆練習紀錄'; doneBtn.setAttribute('aria-label', label); doneBtn.title = label; doneBtn.classList.toggle('on', on); doneBtn.disabled = on; };
   doneBtn.addEventListener('click', () => { if (practiceLog(item, (mine() && Number.isFinite(playerEl().duration) ? playerEl().duration / 60 : item.duration_min), 'manual')) status.textContent = '已記一筆練習紀錄。'; paintDone(); });
   paintDone();
-  const favBtn = h('button', { type: 'button', class: 'btn' });
-  const paintFav = () => { favBtn.textContent = isFav(item.id) ? '★ 最愛' : '☆ 加入最愛'; favBtn.setAttribute('aria-pressed', String(isFav(item.id))); };
+  const favBtn = icBtn('star', '加入最愛');
+  const paintFav = () => { const on = isFav(item.id); const label = on ? '最愛（再按一下取消）' : '加入最愛';
+    favBtn.setAttribute('aria-pressed', String(on)); favBtn.setAttribute('aria-label', label); favBtn.title = label; favBtn.classList.toggle('on', on); };
   favBtn.addEventListener('click', () => { toggleFav(item.id); paintFav(); });
   paintFav();
   // 練習影音都可以下載離線；下載過的優先用手機上的
@@ -241,11 +245,11 @@ async function viewPracticeItem(id, qs) {
     } catch (e) { status.textContent = e.status === 404 ? '雲端硬碟上找不到這支影片（可能被移除或改了權限）。' : e.status === 401 ? 'Google 登入已過期，請重新登入。' : '讀取失敗：' + e.message; }
   };
   const playBtn = h('button', { type: 'button', class: 'btn primary', onclick: start }, svgIcon('play'), prog && prog.t_s > 5 && (!prog.duration_s || prog.t_s < prog.duration_s * 0.95) ? `從 ${clockShort(prog.t_s)}` : '播放');
-  const matBtn = h('button', { type: 'button', class: 'btn', onclick: () => matMode(true) }, '墊旁模式');
+  const matBtn = icBtn('mat', '墊旁模式', { onclick: () => matMode(true) });
   const nav = list ? h('div', { class: 'doc-nav' },
-    k > 0 ? h('a', { class: 'btn', href: `#/practice/item/${encodeURIComponent(list.rows[k - 1].id)}?list=${list.n}&k=${k - 1}` }, svgIcon('back'), '上一支') : h('span'),
+    k > 0 ? h('a', { class: 'btn p-navic', href: `#/practice/item/${encodeURIComponent(list.rows[k - 1].id)}?list=${list.n}&k=${k - 1}`, 'aria-label': '上一支', title: `上一支：${list.rows[k - 1].title}` }, svgIcon('back')) : h('span'),
     h('a', { class: 'btn quiet', href: '#/practice?view=lists' }, `${list.name}（${k + 1}／${list.rows.length}）`),
-    k + 1 < list.rows.length ? h('a', { class: 'btn', href: `#/practice/item/${encodeURIComponent(list.rows[k + 1].id)}?list=${list.n}&k=${k + 1}` }, '下一支', svgIcon('chev')) : h('span')) : null;
+    k + 1 < list.rows.length ? h('a', { class: 'btn p-navic', href: `#/practice/item/${encodeURIComponent(list.rows[k + 1].id)}?list=${list.n}&k=${k + 1}`, 'aria-label': '下一支', title: `下一支：${list.rows[k + 1].title}` }, svgIcon('chev')) : h('span')) : null;
   const nextHref = list && k + 1 < list.rows.length ? `#/practice/item/${encodeURIComponent(list.rows[k + 1].id)}?list=${list.n}&k=${k + 1}&auto=1` : null;
   const endNote = h('div', { class: 'note end-note', hidden: true });
   const head = h('div', { class: 'doc-head p-head', 'data-s': item.style || '' }, h('nav', { class: 'crumb' }, h('a', { href: '#/practice' }, '練習')), h('h1', null, item.title));
@@ -253,8 +257,8 @@ async function viewPracticeItem(id, qs) {
   setView(head, h('p', { class: 'page-sub' }, metaLine),
     h('div', { class: 'chips' }, item.energy ? h('span', { class: 'tag' }, h('span', { class: 'p-energy', 'data-e': item.energy }), item.energy) : null, (item.tags || []).map((x) => h('span', { class: 'tag' }, x))),
     h('section', { class: 'lesson-media' }, slot, status,
-      h('div', { class: 'row' }, mine() ? null : playBtn, item.kind === 'audio' ? null : matBtn, favBtn, doneBtn, offSpec && (s.enabled || offE) ? offButton(offSpec) : null,
-        h('a', { class: 'btn', href: driveViewUrl(item.drive_id), target: '_blank', rel: 'noopener noreferrer' }, svgIcon('external'), '雲端硬碟'))), endNote,
+      h('div', { class: 'row p-ctl' }, mine() ? null : playBtn, item.kind === 'audio' ? null : matBtn, favBtn, doneBtn, offSpec && (s.enabled || offE) ? offButton(offSpec, null, { icons: true }) : null,
+        h('a', { class: 'btn quiet p-ic', href: driveViewUrl(item.drive_id), target: '_blank', rel: 'noopener noreferrer', 'aria-label': '在雲端硬碟開啟', title: '在雲端硬碟開啟' }, svgIcon('external')))), endNote,
     item.summary ? h('p', null, item.summary) : null,
     (item.notes || []).length ? h('ul', { class: 'p-notes' }, item.notes.map((x) => h('li', null, x))) : null, nav);
   PLAYER_SLOT = { name: item.drive_id, el: slot };

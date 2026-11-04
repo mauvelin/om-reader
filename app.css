@@ -392,6 +392,16 @@ label.check input { width: 20px; height: 20px; accent-color: var(--accent); }
 .off-icon { gap: 2px; min-width: 40px; }
 .off-icon .off-pct { font-size: var(--fs-label); font-variant-numeric: tabular-nums; }
 .off-icon.on { color: var(--ink-moss); }
+/* 練習播放頁：播放鈕以外都是圖示（本人 2026-11-04） */
+.p-ctl { align-items: center; gap: 4px; }
+.p-ctl .p-ic, .p-ctl .off-icon { min-width: 42px; min-height: 42px; padding: 0 8px; }
+.p-ctl .p-ic .i, .p-ctl .off-icon .i { width: 24px; height: 24px; }
+.p-ctl .p-ic.on { color: var(--ink-moss); }
+.p-ctl .p-ic[aria-pressed="true"] { color: var(--accent); }
+.p-ctl .p-ic[aria-pressed="true"] .i { fill: currentColor; }
+.p-ctl .p-ic:disabled { background: transparent; border-color: transparent; }
+.doc-nav .p-navic { min-width: 46px; padding: 0 10px; }
+.doc-nav .p-navic .i { width: 22px; height: 22px; }
 .off-course { align-items: center; margin: var(--sp-2) 0 0; }
 .src-row { margin: var(--sp-2) 0 0; gap: 6px; }
 .src-row .filter { min-height: 34px; padding: 2px 12px; }
