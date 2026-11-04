@@ -14,6 +14,8 @@ LOCK_HOOKS.push(() => { COURSES = null; LREC = null; LEXPORT = null; });
 
 // 讀 learn 匯出到雲端硬碟「OM App/learn-export.json」的檔：先用手機上的加密快取；有登入時每次開 App 比對一次
 // 雲端硬碟上的版本（md5），變了才重新下載。沒登入、離線、沒權限都照用快取。
+// 手機上有存過一份時，先用存的把頁面開起來，比對新版放到背景（不擋畫面；2026-11-04 登入回來後卡在「開啟頁面…」）；
+// 第一次（還沒存過）才等雲端硬碟
 async function learnExport() {
   if (!LEXPORT) {
     const rec = await kvGet('learn-export');
@@ -21,6 +23,13 @@ async function learnExport() {
   }
   if (!lexportChecked && gHasToken() && navigator.onLine) {
     lexportChecked = true;
+    const check = learnExportRefresh();
+    if (!LEXPORT) { unlockStep('開啟頁面：讀 learn 匯出檔…'); await check; }
+  }
+  return LEXPORT ? LEXPORT.data : null;
+}
+async function learnExportRefresh() {
+  {
     try {
       const folder = await driveFolderFind(['OM App']);
       const f = folder && await driveFindIn(folder, 'learn-export.json');
@@ -33,7 +42,6 @@ async function learnExport() {
       }
     } catch (e) { /* 用快取 */ }
   }
-  return LEXPORT ? LEXPORT.data : null;
 }
 // 概念頁：標題 → 路徑（摘要【名詞】↗ 用）
 function conceptByTitle(ex) {

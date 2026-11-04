@@ -93,12 +93,26 @@ if (navigator.serviceWorker) {
   });
 }
 
+// 每個請求都有時間上限（預設 30 秒；opts.timeout 可改）：連線沒回來時當失敗處理，畫面不會一直卡住
+//（2026-11-04 本人回報：登入 Google 回來後，解鎖停在「開啟頁面…」）
 async function gfetch(url, opts = {}) {
   if (!gHasToken()) { const e = new Error('Google 登入已過期，請重新登入'); e.status = 401; throw e; }
-  const res = await fetch(url, Object.assign({}, opts, {
-    headers: Object.assign({ Authorization: 'Bearer ' + G.token }, opts.headers || {}),
-    credentials: 'omit', cache: 'no-store', referrerPolicy: 'no-referrer',
-  }));
+  const ctl = new AbortController();
+  const ms = opts.timeout || 30000;
+  const timer = setTimeout(() => ctl.abort(), ms);
+  const { timeout, ...rest } = opts;
+  let res;
+  try {
+    res = await fetch(url, Object.assign({}, rest, {
+      headers: Object.assign({ Authorization: 'Bearer ' + G.token }, rest.headers || {}),
+      credentials: 'omit', cache: 'no-store', referrerPolicy: 'no-referrer', signal: ctl.signal,
+    }));
+  } catch (err) {
+    clearTimeout(timer);
+    if (err && err.name === 'AbortError') { const e = new Error(`雲端硬碟超過 ${ms >= 10000 ? Math.round(ms / 1000) : (ms / 1000).toFixed(1)} 秒沒有回應`); e.status = 0; e.timeout = true; throw e; }
+    throw err;
+  }
+  // 成功時計時器留著：讀內容（json／blob）也算在時間上限內，讀完再中止沒有作用
   if (!res.ok) {
     const e = new Error(`Google HTTP ${res.status}`);
     e.status = res.status;

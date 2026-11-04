@@ -67,7 +67,7 @@ async function driveMeta(id) {
   const f = await (await gfetch(`${DRIVE}/files/${encodeURIComponent(id)}?fields=${D_FIELDS}`)).json();
   return { id: f.id, name: f.name, size: Number(f.size || 0), mime: f.mimeType || '' };
 }
-async function driveRead(id) { return gfetch(`${DRIVE}/files/${encodeURIComponent(id)}?alt=media`); }
+async function driveRead(id) { return gfetch(`${DRIVE}/files/${encodeURIComponent(id)}?alt=media`, { timeout: 120000 }); }   // 講義 PDF 可能很大：2 分鐘
 
 // 找或建一串資料夾（從「我的雲端硬碟」根目錄往下），回傳最後一層的 ID
 async function driveFolder(parts) {

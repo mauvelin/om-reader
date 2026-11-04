@@ -212,7 +212,7 @@ async function offFetch(key, e) {
   while (e.done < e.size) {
     if (OFFQ.stop || !KEY) { e.state = 'paused'; e.err = ''; if (KEY) await offSave(); offEmit(key); return; }
     const end = Math.min(e.size, e.done + OFF_FETCH) - 1;
-    const res = await gfetch(`${DRIVE}/files/${encodeURIComponent(e.drive.id)}?alt=media`, { headers: { Range: `bytes=${e.done}-${end}` } });
+    const res = await gfetch(`${DRIVE}/files/${encodeURIComponent(e.drive.id)}?alt=media`, { headers: { Range: `bytes=${e.done}-${end}` }, timeout: 180000 });
     const buf = new Uint8Array(await res.arrayBuffer());
     if (res.status !== 206 && e.done > 0) throw new Error('雲端硬碟沒有照指定的範圍回應');
     const want = end - e.done + 1;
