@@ -362,7 +362,8 @@ label.check input { width: 20px; height: 20px; accent-color: var(--accent); }
 .lesson-ctl .btn { min-height: 38px; padding: 4px 8px; white-space: nowrap; }
 .lesson-ctl .btn.primary { gap: 6px; font-variant-numeric: tabular-nums; }
 .lesson-ctl .btn .i { width: 18px; height: 18px; }
-.rate-sel { min-height: 38px; padding: 4px 4px; font: inherit; font-size: 16px; font-variant-numeric: tabular-nums; color: var(--fg); background: var(--card); border: 1px solid var(--field-line); border-radius: var(--r-btn); }
+/* 速度：不要系統的下拉箭頭，寬度只剩數字（本人 2026-11-04：再縮小一點）；點了照樣是系統的選單 */
+.rate-sel { min-height: 38px; padding: 4px 7px; font: inherit; font-size: 16px; font-variant-numeric: tabular-nums; text-align: center; color: var(--fg); background: var(--card); border: 1px solid var(--field-line); border-radius: var(--r-btn); -webkit-appearance: none; appearance: none; }
 .lesson-ctl label.check.follow { min-height: 38px; gap: 4px; padding: 0 2px; font-size: var(--fs-chip); }
 .lesson-ctl .fold { margin-left: auto; }
 .video-off .lesson-slot video { display: none; }
@@ -370,7 +371,8 @@ label.check input { width: 20px; height: 20px; accent-color: var(--accent); }
 /* 離線音檔 */
 .off-btn.on { color: var(--ink-moss); font-weight: var(--fw-strong); }
 .lesson-ctl .off-btn { padding: 4px 6px; font-variant-numeric: tabular-nums; }
-.lesson-ctl .skip { padding: 4px 4px; min-width: 34px; font-variant-numeric: tabular-nums; }
+.lesson-ctl .skip { padding: 4px 6px; min-width: 38px; }
+.lesson-ctl .skip .i { width: 24px; height: 24px; }
 .off-course { align-items: center; margin: var(--sp-2) 0 0; }
 .src-row { margin: var(--sp-2) 0 0; gap: 6px; }
 .src-row .filter { min-height: 34px; padding: 2px 12px; }

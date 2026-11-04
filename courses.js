@@ -451,7 +451,8 @@ async function viewLesson(id, qs) {
     h('button', { type: 'button', class: 'btn', onclick: () => gLogin({ returnHash: location.hash }).catch((e) => { mediaNote.textContent = e.message; }) }, '登入 Google'));
   // 往回／往前 10 秒（本人 2026-11-04：聲音播放器沒有這兩顆；速度選單留著就一起加）：播放中才出現
   const skip = (d) => h('button', { type: 'button', class: 'btn quiet skip', 'aria-label': d < 0 ? '往回 10 秒' : '往前 10 秒', hidden: true,
-    onclick: () => { const el = playerEl(); if (el) el.currentTime = Math.max(0, Math.min((el.duration || 1e9) - 0.5, el.currentTime + d)); } }, d < 0 ? '−10' : '+10');
+    title: d < 0 ? '往回 10 秒' : '往前 10 秒',
+    onclick: () => { const el = playerEl(); if (el) el.currentTime = Math.max(0, Math.min((el.duration || 1e9) - 0.5, el.currentTime + d)); } }, svgIcon(d < 0 ? 'back10' : 'fwd10'));   // 圖示（本人 2026-11-04：不要文字）
   const back10 = skip(-10), fwd10 = skip(10);
   // 播放中換影片／聲音（本人 2026-11-04：選了聲音之後換不回影片）：佔「收起影片」的位置，從目前的秒數接著播
   const playingAlt = () => !!(alt && PLAYER && PLAYER.file && PLAYER.file.name === alt.name);
