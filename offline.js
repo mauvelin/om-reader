@@ -24,11 +24,28 @@ LOCK_HOOKS.push(() => {
 });
 UNLOCK_HOOKS.push(() => { setTimeout(() => { offRun(); }, 2500); });   // 解鎖後接著下載沒完成的
 
+// 檔案金鑰（加密後）存成 base64 文字：索引整份是 JSON，Uint8Array／ArrayBuffer 直接 JSON 化會變成 {"0":…}／{}，
+// 重開 App 後就解不開（2026-11-04 本人回報「離線播放失敗：TypeError」，就是這個錯）
+const offWrap = async (raw) => { const s = await seal(raw); return { iv: b64u(s.iv), ct: b64u(s.ct) }; };
+const offUnwrap = (w) => open_({ iv: unb64u(w.iv), ct: unb64u(w.ct) });
+const offWrapOk = (w) => !!w && typeof w.iv === 'string' && typeof w.ct === 'string';
 async function offIndex() {
   if (OFF) return OFF;
   const rec = await kvGet('offline');
   OFF = {};
   if (rec) { try { OFF = JSON.parse(td.decode(await open_(rec))); } catch (e) { OFF = {}; } }
+  // 舊版存壞的金鑰救不回來：清掉這些檔已下載的部分，改成「要重新下載」
+  let broken = 0;
+  for (const e of Object.values(OFF)) {
+    if (e.wrapped && !offWrapOk(e.wrapped)) {
+      broken++;
+      const oid = e.oid;
+      e.oid = gRandom(); e.wrapped = null; e.done = 0; e.state = 'paused';
+      e.err = '舊版的錯：這個檔的金鑰沒存好，要重新下載';
+      offDelChunks(oid).catch(() => {});
+    }
+  }
+  if (broken) await offSave();
   return OFF;
 }
 async function offSave() { if (KEY && OFF) await kvSet('offline', await seal(te.encode(JSON.stringify(OFF)))); }
@@ -48,7 +65,7 @@ function offTellSW(msg) {
 async function offArm(e) {
   let k = OFF_ARMED.get(e.oid);
   if (!k) {
-    const raw = await open_(e.wrapped);
+    const raw = await offUnwrap(e.wrapped);
     k = await crypto.subtle.importKey('raw', raw, { name: 'AES-GCM' }, false, ['decrypt']);
     OFF_ARMED.set(e.oid, k);
   }
@@ -186,10 +203,10 @@ async function offFetch(key, e) {
   let fek;
   if (!e.wrapped) {
     fek = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt']);
-    e.wrapped = await seal(await crypto.subtle.exportKey('raw', fek));
+    e.wrapped = await offWrap(await crypto.subtle.exportKey('raw', fek));
     await offSave();
   } else {
-    fek = await crypto.subtle.importKey('raw', await open_(e.wrapped), { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
+    fek = await crypto.subtle.importKey('raw', await offUnwrap(e.wrapped), { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
   }
   offEmit(key);
   while (e.done < e.size) {
@@ -262,7 +279,7 @@ function offButton(spec, onChange) {
     btn.dataset.painted = '1';
     const e = await offGet(spec.key);
     btn.classList.toggle('on', !!(e && e.state === 'done'));
-    btn.textContent = !e ? '下載' : e.state === 'done' ? '✓ 已下載' : e.state === 'paused' ? `繼續 ${offPct(e)}%` : e.state === 'queued' ? '排隊中' : `下載 ${offPct(e)}%`;
+    btn.textContent = !e ? '下載' : e.state === 'done' ? '✓ 已下載' : e.state === 'paused' ? (e.done ? `繼續 ${offPct(e)}%` : '下載') : e.state === 'queued' ? '排隊中' : `下載 ${offPct(e)}%`;
     btn.title = e && e.err ? e.err : e && e.state === 'done' ? `已存在這支手機（${fmtSize(e.size)}）；點一下可刪除` : '下載到這支手機，沒網路也能看、能聽';
     if (onChange) onChange(e);
   };
