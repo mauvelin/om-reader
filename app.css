@@ -379,21 +379,23 @@ label.check input { width: 20px; height: 20px; accent-color: var(--accent); }
   font-variant-numeric: tabular-nums; text-align: center; color: var(--muted); background: transparent; border: 1px solid transparent; border-radius: var(--r-btn);
   -webkit-appearance: none; appearance: none; cursor: pointer; }
 .rate-sel:active { background: var(--chip); }
-.lesson-ctl label.check.follow { min-height: 38px; gap: 4px; padding: 0 2px; font-size: var(--fs-chip); }
+/* 控制列間距（本人 2026-11-04）：每顆左右都留 6px、彼此再隔 2px，看起來每兩顆之間都約 14px */
+.lesson-ctl label.check.follow { min-height: 38px; gap: 4px; padding: 0 6px 0 7px; font-size: var(--fs-chip); }
+.lesson-ctl label.check.follow input { margin: 0; }
 .video-off .lesson-slot video { display: none; }
 .lesson-media > .status:empty { display: none; }
 /* 離線音檔 */
 .off-btn.on { color: var(--ink-moss); font-weight: var(--fw-strong); }
-.lesson-ctl .off-btn { padding: 4px 6px; font-variant-numeric: tabular-nums; }
-.lesson-ctl .skip { padding: 4px 6px; min-width: 38px; }
+.lesson-ctl .off-btn { padding: 0 6px; font-variant-numeric: tabular-nums; }
+.lesson-ctl .skip { padding: 0 6px; min-width: 0; }
 .lesson-ctl .skip .i, .lesson-ctl .fold .i, .lesson-ctl .off-icon .i { width: 24px; height: 24px; }
-.lesson-ctl .fold[data-to] { min-width: 40px; padding: 0 8px; }
-.lesson-ctl .done-ic { min-width: 36px; padding: 0 6px; }
+.lesson-ctl .fold[data-to] { min-width: 0; padding: 0 6px; }
+.lesson-ctl .done-ic { min-width: 0; padding: 0 6px; }
 .lesson-ctl .done-ic .i { width: 24px; height: 24px; }
 .lesson-ctl .done-ic.on { color: var(--ink-moss); }
 .lesson-ctl .done-ic:disabled { background: transparent; border-color: transparent; }
 .off-icon { gap: 2px; min-width: 36px; }
-.lesson-ctl .off-icon { padding: 0 6px; }
+.lesson-ctl .off-icon { padding: 0 6px; min-width: 0; }
 .off-icon .off-pct { color: var(--accent); }
 .off-icon .off-pct.paused { color: var(--muted); }
 .off-icon .off-pct { font-size: var(--fs-label); font-variant-numeric: tabular-nums; }

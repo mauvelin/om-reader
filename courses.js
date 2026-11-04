@@ -79,6 +79,16 @@ function learnHtml(html) {
   return wrap;
 }
 const vp = (rel) => (rel ? 'vault/' + rel : null);
+// 速度選單的寬度跟著目前的值（選單預設照最長的「1.75×」撐開，選「1×」時右邊多一塊空白；本人 2026-11-04 間距）
+let rateCanvas = null;
+function fitRateSel(sel) {
+  if (!sel || !sel.isConnected) return;
+  const cs = getComputedStyle(sel);
+  const ctx = (rateCanvas || (rateCanvas = document.createElement('canvas'))).getContext('2d');
+  ctx.font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+  const text = (sel.selectedOptions[0] || {}).textContent || '';
+  sel.style.width = `${Math.ceil(ctx.measureText(text).width + parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight) + 6)}px`;   // +6：框線與字形量測的誤差，免得「×」被切到
+}
 // 短格式：不到一小時只寫分:秒（35:22），超過寫 1:05:22（播放鈕用，控制列才放得下一行）
 const clockShort = (x) => { x = Math.max(0, Math.floor(x || 0)); const hh = Math.floor(x / 3600); const mm = String(Math.floor(x / 60) % 60).padStart(2, '0'); const ss = String(x % 60).padStart(2, '0'); return hh ? `${hh}:${mm}:${ss}` : `${mm}:${ss}`; };
 const clock = (s) => [Math.floor(s / 3600), Math.floor((s % 3600) / 60), Math.floor(s % 60)].map((v) => String(v).padStart(2, '0')).join(':');
@@ -422,7 +432,7 @@ async function viewLesson(id, qs) {
   // 控制列只佔一行（本人 2026-11-03：播放與倍速鈕太佔版面）：播放｜速度下拉｜跟隨｜收起影片
   const rateSel = h('select', { class: 'rate-sel', 'aria-label': '播放速度' }, RATES.map((r) => h('option', { value: r }, r + '×')));
   rateSel.value = playerRate();
-  rateSel.addEventListener('change', () => playerSetRate(rateSel.value));
+  rateSel.addEventListener('change', () => { playerSetRate(rateSel.value); fitRateSel(rateSel); });
   const followBox = h('input', { type: 'checkbox', id: 'follow' });
   followBox.checked = (() => { try { return localStorage.getItem('om-follow') !== '0'; } catch (e) { return true; } })();
   followBox.addEventListener('change', () => { try { localStorage.setItem('om-follow', followBox.checked ? '1' : '0'); } catch (e) { /* 略過 */ } });
@@ -737,6 +747,7 @@ async function viewLesson(id, qs) {
     sig.addEventListener('abort', () => ro.disconnect());
   }
   measure();
+  fitRateSel(rateSel);   // 畫面放上去之後才量得到字寬
   // 看得到逐字稿的範圍：頂列下緣（iPhone 上再加釘住的播放區與頁籤列）→ 底部分頁列上緣。
   // 用「釘好之後」的高度算，不用當下的位置：頁面還在最上面時播放區還沒釘住，照當下算會捲過頭
   //（2026-11-04 本人回報跟隨「跳回更早的時間」，原因之一）

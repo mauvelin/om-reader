@@ -284,7 +284,7 @@ async function viewPracticeItem(id, qs) {
   sig.addEventListener('abort', () => { clearInterval(tick); if (countdown) clearInterval(countdown); });
   if (pstore('om-mat-mode') && item.kind !== 'audio') matMode(true, true);
 
-  // 墊旁模式（learn 1d）：播放畫面撐滿、底部大按鈕（時間、進度、−15／+15、播放、速度、★、✓ 完成），兩公尺外也按得到；
+  // 墊旁模式（learn 1d）：播放畫面撐滿、底部大按鈕（時間、進度、往回／往前 10 秒、播放、速度、★、✓ 完成），兩公尺外也按得到；
   // 保持螢幕亮著；播放中 4 秒沒動作就收起按鈕，點一下叫回來。開著就記住，下次開播放頁直接進墊旁模式
   function matMode(on, quiet) {
     let ui = document.querySelector('.mat-ui');
@@ -304,9 +304,9 @@ async function viewPracticeItem(id, qs) {
         h('div', { class: 'mat-bar' },
           h('div', { class: 'mat-time' }, h('span', { class: 'mat-cur' }, '00:00'), h('input', { type: 'range', class: 'mat-seek', min: '0', max: '1000', value: '0', 'aria-label': '播放位置' }), h('span', { class: 'mat-dur' }, '--:--')),
           h('div', { class: 'mat-ctrls' },
-            h('button', { type: 'button', class: 'btn mat-btn', 'data-skip': '-15' }, '−15'),
+            h('button', { type: 'button', class: 'btn mat-btn', 'data-skip': '-10', 'aria-label': '往回 10 秒' }, svgIcon('back10')),   // 本人 2026-11-04：同講次頁改 10 秒
             h('button', { type: 'button', class: 'btn primary mat-play', 'aria-label': '播放' }, svgIcon('play')),
-            h('button', { type: 'button', class: 'btn mat-btn', 'data-skip': '15' }, '+15'),
+            h('button', { type: 'button', class: 'btn mat-btn', 'data-skip': '10', 'aria-label': '往前 10 秒' }, svgIcon('fwd10')),
             h('button', { type: 'button', class: 'btn mat-btn mat-rate' }, '1×'),
             h('button', { type: 'button', class: 'btn mat-btn mat-star' }, '★'),
             h('button', { type: 'button', class: 'btn primary mat-done' }, '✓ 完成')),

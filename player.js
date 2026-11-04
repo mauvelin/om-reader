@@ -99,6 +99,7 @@ async function playerOpen(file, { t = 0, mode, resumed = false, meta = null } = 
       document.querySelectorAll('.rate-sel').forEach((s) => {
         if (![...s.options].some((o) => o.value === r)) s.append(h('option', { value: r }, r + '×'));
         s.value = r;
+        if (typeof fitRateSel === 'function') fitRateSel(s);
       });
     });
     el.addEventListener('pause', () => playerProgress(el));
