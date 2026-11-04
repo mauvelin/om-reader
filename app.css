@@ -376,7 +376,11 @@ label.check input { width: 20px; height: 20px; accent-color: var(--accent); }
 .off-btn.on { color: var(--ink-moss); font-weight: var(--fw-strong); }
 .lesson-ctl .off-btn { padding: 4px 6px; font-variant-numeric: tabular-nums; }
 .lesson-ctl .skip { padding: 4px 6px; min-width: 38px; }
-.lesson-ctl .skip .i { width: 24px; height: 24px; }
+.lesson-ctl .skip .i, .lesson-ctl .fold .i, .lesson-ctl .off-icon .i { width: 24px; height: 24px; }
+.lesson-ctl .fold[data-to] { min-width: 40px; padding: 0 8px; }
+.off-icon { gap: 2px; min-width: 40px; }
+.off-icon .off-pct { font-size: var(--fs-label); font-variant-numeric: tabular-nums; }
+.off-icon.on { color: var(--ink-moss); }
 .off-course { align-items: center; margin: var(--sp-2) 0 0; }
 .src-row { margin: var(--sp-2) 0 0; gap: 6px; }
 .src-row .filter { min-height: 34px; padding: 2px 12px; }

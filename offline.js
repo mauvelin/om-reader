@@ -272,8 +272,9 @@ async function offSweep() {
 /* ── 介面：一顆按鈕（講次頁、練習頁），整門課下載（課程頁），設定頁一節 ── */
 // 狀態（字要短，講次頁控制列只有一行；本人 2026-11-04）：沒下載 →「下載」；下載中 →「下載 45%」（點了暫停）；
 // 暫停 →「繼續 45%」；排隊 →「排隊中」；完成 →「✓ 已下載」（點了問要不要刪）
-function offButton(spec, onChange) {
-  const btn = h('button', { type: 'button', class: 'btn quiet off-btn', title: '下載到這支手機，沒網路也能看、能聽' });
+// opts.icons：講次頁控制列用圖示（本人 2026-11-04）——沒下載＝下載圖示；已下載＝打勾圖示；下載中＝45%；暫停＝下載圖示＋45%；排隊＝時鐘
+function offButton(spec, onChange, opts = {}) {
+  const btn = h('button', { type: 'button', class: 'btn quiet off-btn' + (opts.icons ? ' off-icon' : ''), title: '下載到這支手機，沒網路也能看、能聽' });
   const paint = async () => {
     if (!btn.isConnected && btn.dataset.painted) { OFF_LISTENERS.delete(listener); return; }
     btn.dataset.painted = '1';
@@ -281,8 +282,16 @@ function offButton(spec, onChange) {
     btn.classList.toggle('on', !!(e && e.state === 'done'));
     // 講次頁播放中（外層 .compact）只顯示短字：✓／45%／繼續／排隊；完整的字在 title 與同步頁
     const short = !!btn.closest('.compact');
-    btn.textContent = !e ? '下載' : e.state === 'done' ? (short ? '✓' : '✓ 已下載') : e.state === 'paused' ? (e.done ? (short ? '繼續' : `繼續 ${offPct(e)}%`) : '下載') : e.state === 'queued' ? (short ? '排隊' : '排隊中') : (short ? `${offPct(e)}%` : `下載 ${offPct(e)}%`);
-    btn.title = e && e.err ? e.err : e && e.state === 'done' ? `已存在這支手機（${fmtSize(e.size)}）；點一下可刪除` : '下載到這支手機，沒網路也能看、能聽';
+    const label = !e ? '下載到手機' : e.state === 'done' ? '已下載' : e.state === 'paused' ? (e.done ? `繼續下載（${offPct(e)}%）` : '下載到手機') : e.state === 'queued' ? '排隊等下載' : `下載中 ${offPct(e)}%`;
+    if (opts.icons) {
+      const st = !e ? 'none' : e.state === 'paused' && !e.done ? 'none' : e.state;
+      btn.replaceChildren(...(st === 'none' ? [svgIcon('download')] : st === 'done' ? [svgIcon('downloaded')] : st === 'queued' ? [svgIcon('clock')]
+        : st === 'paused' ? [svgIcon('download'), h('span', { class: 'off-pct' }, `${offPct(e)}%`)] : [h('span', { class: 'off-pct' }, `${offPct(e)}%`)]));
+    } else {
+      btn.textContent = !e ? '下載' : e.state === 'done' ? (short ? '✓' : '✓ 已下載') : e.state === 'paused' ? (e.done ? (short ? '繼續' : `繼續 ${offPct(e)}%`) : '下載') : e.state === 'queued' ? (short ? '排隊' : '排隊中') : (short ? `${offPct(e)}%` : `下載 ${offPct(e)}%`);
+    }
+    btn.setAttribute('aria-label', label);
+    btn.title = e && e.err ? e.err : e && e.state === 'done' ? `已存在這支手機（${fmtSize(e.size)}）；點一下可刪除` : label;
     if (onChange) onChange(e);
   };
   const listener = (k) => { if (k == null || k === spec.key) paint(); };
