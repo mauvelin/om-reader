@@ -256,7 +256,7 @@ async function recSyncOnce() {
   } catch (e) {
     RSYNC.dirty = true;
     const msg = e.status === 401 ? 'Google 登入已過期，重新登入後會補寫。'
-      : e.status === 403 || e.status === 404 ? `雲端硬碟不讓 App 寫進「OM App/紀錄」（HTTP ${e.status}）。可能是「紀錄」資料夾不是由這個 App 建立的，詳見下方說明。`
+      : e.status === 403 || e.status === 404 ? `雲端硬碟不讓 App 寫進「OM App/紀錄」（HTTP ${e.status}）。可能是「紀錄」資料夾不是由這個 App 建立的：在電腦上把裡面的 pc.json 先移開、刪掉空的「紀錄」資料夾，回來按「立刻同步紀錄」讓 App 建立，再把 pc.json 放回去。`
         : '紀錄同步失敗：' + (e.message || e);
     await recSaveState(st).catch(() => {});
     return (RSYNC.last = { ok: false, at: Date.now(), msg, status: e.status || 0 });
@@ -308,9 +308,8 @@ async function recSection() {
   const on = h('input', { type: 'checkbox', id: 'rec-on' });
   on.checked = !st.off;
   on.addEventListener('change', async () => { const s = await recState(); s.off = !on.checked; await recSaveState(s); route(); });
-  const head = [secTitle('學習紀錄同步'),
-    h('label', { class: 'check', for: 'rec-on' }, on, '和電腦（learn）與其他裝置同步學習進度、書籤、最愛、練習紀錄')];
-  if (st.off) return [...head, h('p', { class: 'muted' }, '已關閉：紀錄只存在這支手機。')];
+  const onRow = h('label', { class: 'check', for: 'rec-on' }, on, '和電腦（learn）與其他裝置同步學習進度、書籤、最愛、練習紀錄');
+  if (st.off) return [secTitle('學習紀錄同步'), h('div', { class: 'card' }, onRow, h('p', { class: 'muted' }, '已關閉：紀錄只存在這支手機。'))];
   const dev = h('input', { id: 'rec-device', type: 'text', autocomplete: 'off', autocapitalize: 'off', spellcheck: 'false', value: st.device, maxlength: '32' });
   const saveDev = h('button', { type: 'button', class: 'btn' }, '儲存裝置名');
   saveDev.addEventListener('click', async () => {
@@ -328,10 +327,10 @@ async function recSection() {
     now.disabled = true; out.textContent = '同步紀錄中…';
     try { show(await recSync()); } finally { now.disabled = false; }
   });
-  return [...head, h('div', { class: 'card' },
+  // 狀態與「立刻同步紀錄」在上；開關、裝置名與說明收進「設定」
+  const more = h('details', { class: 'set-more' }, h('summary', null, `設定：開關、裝置名（目前 ${st.device}）`),
+    onRow,
     h('div', { class: 'field' }, h('label', { for: 'rec-device' }, '這台裝置的名字（紀錄檔名）'), dev), h('div', { class: 'row' }, saveDev),
-    h('div', { class: 'row' }, now), out,
-    h('p', { class: 'muted' }, '紀錄檔放在雲端硬碟「OM App/紀錄/<裝置名>.json」，每台裝置只寫自己的那一個，內容是合併後的完整紀錄；電腦上的 learn 寫 pc.json。'
-      + '開 App、回到前景時讀別台的紀錄；有變動時寫（播放中的進度最多每分鐘一次）、離開 App 時再寫一次。'
-      + '若出現「不讓 App 寫進」：這個 App 只被允許改它自己建立的檔，請在電腦上把「OM App/紀錄」裡的 pc.json 先移到別處、刪掉空的「紀錄」資料夾，回 App 按「立刻同步紀錄」讓 App 建立資料夾，再把 pc.json 放回去。'))];
+    h('p', { class: 'muted' }, '紀錄放在雲端硬碟「OM App/紀錄/」，每台裝置寫自己的那一個（電腦上的 learn 寫 pc.json）。開 App、回到前景時讀別台的；有變動時寫，播放中的進度最多每分鐘一次。'));
+  return [secTitle('學習紀錄同步'), h('div', { class: 'card' }, out, h('div', { class: 'row' }, now), more)];
 }

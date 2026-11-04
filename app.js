@@ -9,7 +9,7 @@ async function wipeAll() {
   await new Promise((res) => { const r = indexedDB.deleteDatabase(DB_NAME); r.onsuccess = r.onerror = r.onblocked = res; });
 }
 
-// 雲端硬碟影音（實驗中，預設關閉）：啟用、用戶端 ID、登入狀態、用檔名找一支來播
+// Google 雲端硬碟：狀態與登入鈕在上；啟用、用戶端 ID、用檔名測試收進「設定」（還沒填用戶端 ID 才自動展開）
 async function googleSection() {
   const s = await gSettings();
   const out = h('p', { class: 'status', role: 'status' });
@@ -17,9 +17,9 @@ async function googleSection() {
   const enable = h('input', { type: 'checkbox', id: 'g-enable' });
   enable.checked = s.enabled;
   enable.addEventListener('change', async () => { await gSaveSettings({ enabled: enable.checked }); if (!enable.checked) { playerClose(); gForget(); } route(); });
-  const head = [secTitle('雲端硬碟影音（實驗中）'),
-    h('label', { class: 'check', for: 'g-enable' }, enable, '啟用：在 App 裡播放雲端硬碟的影片與聲音')];
-  if (!s.enabled) return [...head, h('p', { class: 'muted' }, '預設關閉。啟用後才會出現 Google 登入與播放器；關閉時會丟掉記憶體裡的 Google 登入。')];
+  const enableRow = h('label', { class: 'check', for: 'g-enable' }, enable, '啟用：在 App 裡播放雲端硬碟的影音、讀講義原檔、同步學習紀錄');
+  if (!s.enabled) return [secTitle('Google 雲端硬碟'), h('div', { class: 'card' }, enableRow,
+    h('p', { class: 'muted' }, '關閉中。啟用後才會出現 Google 登入、播放器與學習紀錄同步；關閉時會丟掉記憶體裡的 Google 登入。'))];
   const client = h('input', { id: 'g-client', type: 'text', autocomplete: 'off', autocapitalize: 'off', spellcheck: 'false',
     placeholder: s.client ? '（已存，留空表示不變）' : '….apps.googleusercontent.com' });
   const saveBtn = h('button', { type: 'button', class: 'btn' }, '儲存用戶端 ID');
@@ -28,9 +28,9 @@ async function googleSection() {
     if (!/\.apps\.googleusercontent\.com$/.test(v)) { out.textContent = '用戶端 ID 應該以 .apps.googleusercontent.com 結尾。'; return; }
     await gSaveSettings({ client: v }); client.value = ''; out.textContent = '已儲存（加密存在這支手機）。';
   });
-  const loginBtn = h('button', { type: 'button', class: 'btn primary' }, gHasToken() ? '重新登入 Google' : '登入 Google');
+  const loginBtn = h('button', { type: 'button', class: gHasToken() ? 'btn' : 'btn primary' }, gHasToken() ? '重新登入 Google' : '登入 Google');
   loginBtn.addEventListener('click', () => gLogin({ returnHash: '#/settings' }).catch((e) => { out.textContent = e.message; }));
-  const state = h('p', { class: 'muted' }, gHasToken() ? `已登入，約 ${gMinutesLeft()} 分鐘後失效。` : '尚未登入（登入約一小時失效，只存在記憶體）。');
+  const state = h('p', { class: 'muted set-line' }, gHasToken() ? `已登入，約 ${gMinutesLeft()} 分鐘後失效。` : '還沒登入。登入約一小時失效，只存在記憶體。');
   const q = h('input', { id: 'g-q', type: 'text', autocomplete: 'off', autocapitalize: 'off', spellcheck: 'false', placeholder: '雲端硬碟上的檔名，例如 …｜00.01.課程介紹.mp4' });
   const found = h('div');
   const findBtn = h('button', { type: 'button', class: 'btn' }, '找');
@@ -50,10 +50,11 @@ async function googleSection() {
       if (hit.choices) driveChooser(hit, found, show); else show(hit);
     } catch (e) { out.textContent = e.status === 401 ? 'Google 登入已過期，請重新登入。' : '查詢失敗：' + e.message; }
   });
-  return [...head, h('div', { class: 'card' },
+  const more = h('details', { class: 'set-more', open: !s.client }, h('summary', null, '設定：啟用、OAuth 用戶端 ID、用檔名測試'),
+    enableRow,
     h('div', { class: 'field' }, h('label', { for: 'g-client' }, 'OAuth 用戶端 ID'), client), h('div', { class: 'row' }, saveBtn),
-    state, h('div', { class: 'row' }, loginBtn),
-    h('div', { class: 'field' }, h('label', { for: 'g-q' }, '測試：用檔名找一支來播'), q), h('div', { class: 'row' }, findBtn), found, out)];
+    h('div', { class: 'field' }, h('label', { for: 'g-q' }, '測試：用檔名找一支來播'), q), h('div', { class: 'row' }, findBtn), found);
+  return [secTitle('Google 雲端硬碟'), h('div', { class: 'card' }, state, h('div', { class: 'row' }, loginBtn), out, more)];
 }
 
 async function viewSettings() {
@@ -76,9 +77,7 @@ async function viewSettings() {
     info.replaceChildren();
     const s = (await kvGet('state')) || {};
     const add = (k, v) => info.append(h('dt', null, k), h('dd', null, v));
-    add('上次同步', s.syncedAt ? new Date(s.syncedAt).toLocaleString('zh-TW') : '尚未');
-    add('資料版本', s.commit ? s.commit.slice(0, 7) : '—');
-    if (s.pendingMedia) add('尚未下載', `${s.pendingMedia} 個圖片與附件`);
+    paintDataLine();
     if (navigator.storage && navigator.storage.estimate) {
       try { const e = await navigator.storage.estimate(); add('手機已用', `${fmtMB(e.usage || 0)}／配額 ${fmtMB(e.quota || 0)}`); } catch (e) { /* 略過 */ }
     }
@@ -158,17 +157,25 @@ async function viewSettings() {
     location.hash = '#/';
     route();
   });
+  // 同步頁（本人 2026-11-04 最後整理）：每一區最上面是狀態與最常按的鈕；只設定一次的欄位收進各區的「設定」，
+  // 還沒設定過才自動展開。順序：資料更新 → Google 雲端硬碟 → 學習紀錄同步 → 離線影音 → 這支手機
+  const dataLine = h('p', { class: 'muted set-line' });
+  const paintDataLine = async () => {
+    const s = (await kvGet('state')) || {};
+    dataLine.textContent = s.syncedAt ? `上次同步 ${new Date(s.syncedAt).toLocaleString('zh-TW', { dateStyle: 'medium', timeStyle: 'short' })}・資料版本 ${s.commit ? s.commit.slice(0, 7) : '—'}${s.pendingMedia ? `・還有 ${s.pendingMedia} 個圖片與附件沒下載` : ''}` : '還沒同步過。先在下面「設定」填資料 repo 與唯讀 token，再按「檢查更新」。';
+  };
+  const dataSet = h('details', { class: 'set-more', open: !(cfg.repo && cfg.token) }, h('summary', null, '設定：資料 repo 與唯讀 token'),
+    h('div', { class: 'field' }, h('label', { for: 'cfg-repo' }, '資料 repo（擁有者/名稱）'), repo),
+    h('div', { class: 'field' }, h('label', { for: 'cfg-token' }, '唯讀 token'), token),
+    h('p', { class: 'muted' }, 'repo 名稱與 token 只存在這支手機，以 Face ID 導出的金鑰加密；token 到期後在這裡貼上新的。'));
   setView(h('h1', null, '同步與設定'),
-    h('div', { class: 'card' },
-      h('div', { class: 'field' }, h('label', { for: 'cfg-repo' }, '資料 repo（擁有者/名稱）'), repo),
-      h('div', { class: 'field' }, h('label', { for: 'cfg-token' }, '唯讀 token'), token),
-      h('div', { class: 'row' }, checkBtn), out, choice, prog, quota),
+    secTitle('資料更新'),
+    h('div', { class: 'card' }, dataLine, h('div', { class: 'row' }, checkBtn), out, choice, prog, quota, dataSet),
     ...(await googleSection()),
     ...((await gSettings()).enabled ? await recSection() : []),
     ...(((await gSettings()).enabled || Object.keys(await offIndex()).length) ? await offSection() : []),
-    secTitle('這支手機'), h('div', { class: 'card' }, info),
-    h('p', { class: 'muted' }, '只下載有變動的檔。repo 名稱與 token 只存在這支手機，token 與所有資料都以 Face ID 導出的金鑰加密。token 到期後在這裡貼上新的即可。'),
-    h('div', { class: 'row' }, lockBtn, clearBtn));
+    secTitle('這支手機'), h('div', { class: 'card' }, info, h('div', { class: 'row' }, lockBtn, clearBtn)));
+  paintDataLine();
   fillInfo();
   if (syncing) watch();   // 下載途中離開又回來
 }

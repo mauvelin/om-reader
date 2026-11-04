@@ -376,7 +376,7 @@ async function offSection() {
     const resume = e.state === 'paused' ? h('button', { type: 'button', class: 'btn', onclick: async () => { if (!gHasToken()) { out.textContent = '要先登入 Google 才能下載。'; return; } await offEnqueue({ key }); route(); } }, '繼續下載') : null;
     const href = e.kind === 'practice' ? '#/practice/item/' + encodeURIComponent(e.ref) : '#/lesson/' + encodeURIComponent(e.ref);
     return h('li', { class: 'choice' }, h('a', { href }, h('span', { class: 't' }, e.title), h('span', { class: 'm' }, `${e.kind === 'practice' ? '練習' : '講次'}・${offIsVideo(e) ? '影片' : '聲音'}・${state}`)), h('div', { class: 'row' }, resume, del));
-  }) : [h('li', { class: 'empty' }, '還沒有下載任何影音。在講次頁、練習頁按「下載」，或在課程頁下載整門課。')]);
+  }) : []);
   const clear = rows.length ? h('button', { type: 'button', class: 'btn quiet danger', onclick: async () => {
     if (!confirm(`刪除這支手機上全部 ${rows.length} 個離線影音（${fmtSize(total)}）？`)) return;
     for (const [key] of rows) await offRemove(key);
@@ -384,6 +384,7 @@ async function offSection() {
   } }, '刪除全部離線影音') : null;
   offSweep().catch(() => {});
   return [secTitle('離線影音'), h('div', { class: 'card' },
-    h('p', { class: 'muted' }, `共 ${rows.length} 個、${fmtSize(total)}${free != null ? `；手機給 App 的空間還有約 ${fmtSize(free)}` : ''}。課程講次與練習的影片、聲音都可以下載，沒網路、沒登入 Google 也能看、能聽；內容加密存在這支手機。影片很大，下載時請讓 App 留在前景。`),
-    list, out, clear ? h('div', { class: 'row' }, clear) : null)];
+    h('p', { class: 'muted set-line' }, `共 ${rows.length} 個、${fmtSize(total)}${free != null ? `・手機給 App 的空間還有約 ${fmtSize(free)}` : ''}`),
+    rows.length ? list : null, out, clear ? h('div', { class: 'row' }, clear) : null,
+    h('p', { class: 'muted' }, '在講次頁、練習頁按下載圖示，或在課程頁下載整門課；沒網路、沒登入也能看、能聽，內容加密存在這支手機。影片很大，下載時請讓 App 留在前景。'))];
 }
