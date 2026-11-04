@@ -589,3 +589,8 @@ mark.hit.cur { background: var(--accent); color: var(--bg); }
   bottom: calc(62px + env(safe-area-inset-bottom)); z-index: 11; display: flex; align-items: center; gap: var(--sp-2);
   padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-3); background: var(--card); border: 1px solid var(--line2); box-shadow: var(--shadow-card); font-size: var(--fs-chip); }
 .pick-hint span { flex: 1; }
+/* 課程頁面的種類標示（逐字稿／講義／摘要…）：清單標題旁的小 chip */
+.item .t .kind-tag { display: inline-block; margin-left: 6px; padding: 0 6px; border: 1px solid var(--line2); border-radius: var(--r-btn);
+  font-size: 12px; font-weight: var(--fw-strong); line-height: 1.6; color: var(--muted); vertical-align: 2px; white-space: nowrap; }
+.doc-nav.doc-nav-course { display: flex; justify-content: flex-start; flex-wrap: wrap; }
+.doc-nav.doc-nav-course > * { justify-self: auto; }

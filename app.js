@@ -232,6 +232,7 @@ async function route() {
     stashView();
     curHash = hash;
     if (restoreView(hash)) return;
+    if (typeof docKinds === 'function') await docKinds().catch(() => null);   // 課程頁的種類標示與連回課程（courses.js）
     if (hash.startsWith('#/browse')) await viewBrowse();
     else if (hash.startsWith('#/history')) await viewHistory(hash.split('?')[1] || '');
     else if (hash.startsWith('#/courses')) { const cat = await catalog(); if (!cat) await emptyState(); else await viewCourses(cat, 'self/resources'); }

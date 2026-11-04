@@ -10,8 +10,8 @@ let COURSES = null;   // { list, byId, lessonById }
 let LREC = null;      // { progress: { media.key: {t_s, duration_s, completed, at} }, recent: { lesson_id: {course_id, at} } }
 let LEXPORT = null;    // learn-export.json（learn → App）：首頁分組、概念引用（規格：learn repo docs/om-app-contract.md §1）
 let lexportChecked = false;
-LOCK_HOOKS.push(() => { COURSES = null; LREC = null; LEXPORT = null; });
-function coursesReset() { COURSES = null; TERM_PAGES = null; }   // 同步完新資料時（core.js resetCaches）
+LOCK_HOOKS.push(() => { COURSES = null; LREC = null; LEXPORT = null; DOC_KIND = null; });
+function coursesReset() { COURSES = null; TERM_PAGES = null; DOC_KIND = null; }   // 同步完新資料時（core.js resetCaches）
 
 // 讀 learn 匯出到雲端硬碟「OM App/learn-export.json」的檔：先用手機上的加密快取；有登入時每次開 App 比對一次
 // 雲端硬碟上的版本（md5），變了才重新下載。沒登入、離線、沒權限都照用快取。
@@ -1117,6 +1117,28 @@ function lessonHitLink(x, hit, terms) {
     h('span', { class: 'm' }, `講次・${x.course.title}・${clock(hit.t)}${hit.n > 1 ? `・這一講共 ${hit.n} 處` : ''}`),
     markTerms(hit.text, terms.map((t) => t.toLowerCase()))), null, x.course.category));
 }
+// 課程裡的每一頁是哪一種（逐字稿／講義／摘要／課程筆記／整門課摘要）、屬於哪門課、哪幾講：
+// 清單與搜尋結果在標題旁標出種類，文章頁連回課程頁與講次頁（本人 2026-11-04）。
+// 來源是 _courses.json（/sync 產生的既有索引），不改 Notion 標題與檔名
+let DOC_KIND = null;
+async function docKinds() {
+  if (DOC_KIND) return DOC_KIND;
+  const ci = await courseIndex();
+  if (!ci) return null;
+  const m = new Map();
+  for (const c of ci.list) {
+    for (const l of c.lessons) if (l.transcript) m.set(vp(l.transcript.md), { label: '逐字稿', c, lessons: [l], lesson: l });
+    for (const x of c.handouts) {
+      const ls = c.lessons.filter((l) => (l.handout_ids || []).includes(x.id));
+      m.set(vp(x.md), { label: x.kind === 'summary' ? '摘要' : '講義', c, lessons: ls });
+    }
+    for (const x of c.notes) if (!m.has(vp(x.md))) m.set(vp(x.md), { label: '課程筆記', c, lessons: [] });
+    for (const dg of c.digests || []) if (dg.raw) m.set('vault/' + dg.raw + '.md', { label: '整門課摘要', c, lessons: [] });
+  }
+  return (DOC_KIND = m);
+}
+const docKindOf = (p) => (DOC_KIND && DOC_KIND.get(p)) || null;
+const lessonName = (l) => `${l.order ? l.order + '　' : ''}${l.lesson_title || l.title}`;
 function lessonLinkFor(p) {
   if (!COURSES) return null;
   for (const [id, x] of COURSES.lessonById) if (x.lesson.transcript && vp(x.lesson.transcript.md) === p) return '#/lesson/' + id;

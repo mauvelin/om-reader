@@ -245,8 +245,9 @@ function areaChip(area) {
 }
 let restoreOnOpen = null;   // 從「繼續看／看過」點進去時，回到上次讀到的位置
 function itemLink(d, extra, opts) {
+  const kind = typeof docKindOf === 'function' ? docKindOf(d.p) : null;   // 逐字稿、講義…：標在標題旁
   const a = h('a', { class: 'item', href: pageHref(d.p) + (opts && opts.q ? '?q=' + encodeURIComponent(opts.q) : '') },
-    h('span', { class: 't' }, docTitle(d)), h('span', { class: 'm' }, docMeta(d)), extra || null);
+    h('span', { class: 't' }, docTitle(d), kind ? h('span', { class: 'kind-tag' }, kind.label) : null), h('span', { class: 'm' }, docMeta(d)), extra || null);
   if (opts && opts.resume) a.addEventListener('click', () => { restoreOnOpen = d.p; });
   return h('li', null, areaColor(a, d));
 }
@@ -568,6 +569,8 @@ async function viewPage(path, q) {
     .filter(Boolean).map((x) => h('span', { class: 'tag' }, x)), ns ? h('span', { class: 'tag ns' }, ns) : null,
     d.unrev ? h('span', { class: 'tag warn' }, '未審') : null,
     d.st === 'raw' ? h('span', { class: 'tag ns' }, '還沒折進 wiki') : null);
+  const kind = typeof docKindOf === 'function' ? docKindOf(d.p) : null;
+  if (kind) chips.prepend(h('span', { class: 'tag kind' }, kind.label));
   const onNote = d.onp && CAT.byPath.get(d.onp);
   if (onNote) chips.append(h('a', { class: 'tag', href: pageHref(onNote.p) }, `出現在〈${d.on}〉${d.on_n > 1 ? `等 ${d.on_n} 篇` : ''}`));
   pushHistory(d.p).catch(() => {});
@@ -768,12 +771,21 @@ function courseOf(p) {
 }
 function docNav(d) {
   const cs = courseOf(d.p);
+  const kind = typeof docKindOf === 'function' ? docKindOf(d.p) : null;
+  const coursePage = kind ? '#/course/' + encodeURIComponent(kind.c.id) : null;
+  // 講義、摘要、課程筆記、整門課摘要：連回課程頁，講義與摘要另連用到它的講次頁（最多 3 講）
+  if (kind && kind.label !== '逐字稿') {
+    const row = h('div', { class: 'doc-nav doc-nav-course' }, h('a', { class: 'btn', href: coursePage }, svgIcon('course'), '課程頁'));
+    for (const l of kind.lessons.slice(0, 3)) row.append(h('a', { class: kind.lessons.length === 1 ? 'btn primary' : 'btn', href: '#/lesson/' + encodeURIComponent(l.id) }, '講次頁 ' + (l.order || l.lesson_title || '')));
+    if (kind.lessons.length > 3) row.append(h('span', { class: 'muted' }, `另有 ${kind.lessons.length - 3} 講用到`));
+    return row;
+  }
   if (cs) {
     const row = h('div', { class: 'doc-nav' });
     const prev = cs.kind === 'lesson' ? cs.c.lessons[cs.li - 1] : null;
     const next = cs.kind === 'lesson' ? cs.c.lessons[cs.li + 1] : null;
     row.append(prev ? h('a', { class: 'btn', href: pageHref(prev.p), 'aria-label': `上一講 ${prev.o || ''}` }, svgIcon('back'), prev.o || '上一講') : h('span'),
-      h('a', { class: 'btn quiet', href: '#/c/' + cs.ci }, '課程目錄'),
+      h('a', { class: 'btn quiet', href: coursePage || '#/c/' + cs.ci }, coursePage ? '課程頁' : '課程目錄'),
       next ? h('a', { class: 'btn', href: pageHref(next.p), 'aria-label': `下一講 ${next.o || ''}` }, next.o || '下一講', svgIcon('chev')) : h('span'));
     const lp = typeof lessonLinkFor === 'function' ? lessonLinkFor(d.p) : null;
     if (lp) row.append(h('a', { class: 'btn primary', href: lp }, '講次頁（播放＋逐字稿）'));
