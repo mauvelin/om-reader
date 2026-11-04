@@ -84,7 +84,8 @@
   let MD = null;
   function md() {
     if (!MD) {
-      MD = markdownit('commonmark', { html: true, linkify: false, typographer: false });
+      // breaks：單一換行照樣換行（2026-11-04，同 renderer.py）
+      MD = markdownit('commonmark', { html: true, linkify: false, typographer: false, breaks: true });
       const image = MD.renderer.rules.image;
       MD.renderer.rules.image = function (tokens, idx, options, env, self) {
         if (OPTIONS.renderImage) {   // App 自己決定圖片怎麼輸出（例：om: 網址 → data-om，之後從資料包載入）

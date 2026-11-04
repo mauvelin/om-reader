@@ -43,22 +43,6 @@ async function learnExportRefresh() {
     } catch (e) { /* 用快取 */ }
   }
 }
-// 講義與我的筆記：單一換行照原樣換行，跟閱讀頁（markdown-it breaks: true）一樣（本人 2026-11-04：課程給的純文字講義
-// 一行一個詞條，在講次頁擠成一大段，「單獨開啟」才正常）。learn-text 用 CommonMark（單一換行＝空格），而且是 learn 的
-// 正本、App 不改它，所以交給它之前，在「段落裡接著下一行」的行尾補「\」（CommonMark 的硬換行）；
-// 標題、清單項目開頭、引言、表格、程式碼區塊、HTML、分隔線不動
-function keepBreaks(text, bodyStartLine) {
-  const lines = String(text).split('\n');
-  const startsBlock = (s) => /^\s*(#{1,6}\s|[-*+]\s|\d{1,9}[.)]\s|>|\||```|~~~|<|([-*_]\s*){3,}$|=+\s*$)/.test(s);
-  let fence = false;
-  for (let i = Math.max(0, (bodyStartLine || 1) - 1); i < lines.length - 1; i++) {
-    const cur = lines[i], nxt = lines[i + 1];
-    if (/^\s*(```|~~~)/.test(cur)) { fence = !fence; continue; }
-    if (fence || !cur.trim() || !nxt.trim() || startsBlock(nxt) || /^\s*(#{1,6}\s|\||<)/.test(cur) || /(\\| {2,})$/.test(cur)) continue;
-    lines[i] = cur + '\\';
-  }
-  return lines.join('\n');
-}
 // 概念頁：標題 → 路徑（摘要【名詞】↗ 用）
 function conceptByTitle(ex) {
   const m = new Map();
@@ -542,7 +526,7 @@ async function viewLesson(id, qs) {
     const isPdf = !!x.pdf_key && /\.pdf$/i.test(x.pdf_key);
     const row = h('div', { class: 'row' }, d ? h('a', { class: 'btn quiet', href: pageHref(d.p) }, '單獨開啟') : null);
     const pdfBox = h('div', { class: 'pdf-view hv-pdf' });
-    const textBox = h('div', { class: 'hv-text' }, t ? learnHtml(asHtml(LearnText.renderMarkdown(keepBreaks(t, x.body_start_line), x.body_start_line || 1))) : h('p', { class: 'muted' }, '講義文字還沒同步。'));
+    const textBox = h('div', { class: 'hv-text' }, t ? learnHtml(asHtml(LearnText.renderMarkdown(t, x.body_start_line || 1))) : h('p', { class: 'muted' }, '講義文字還沒同步。'));
     const sec = h('section', { class: 'handout' }, h('h3', null, x.handout_title || x.title));
     if (isPdf) {
       const bar = h('div', { class: 'seg-tabs hv-bar', role: 'group', 'aria-label': '原檔或文字版' });
@@ -624,7 +608,7 @@ async function viewLesson(id, qs) {
       const t = await textOf(x.md);
       const d = CAT.byPath.get(vp(x.md));
       box.append(h('section', { class: 'handout' }, h('h3', null, d ? h('a', { href: pageHref(d.p) }, docTitle(d)) : x.md),
-        t ? learnHtml(asHtml(LearnText.renderMarkdown(keepBreaks(t, x.body_start_line), x.body_start_line || 1))) : h('p', { class: 'muted' }, '筆記還沒同步。')));
+        t ? learnHtml(asHtml(LearnText.renderMarkdown(t, x.body_start_line || 1))) : h('p', { class: 'muted' }, '筆記還沒同步。')));
     }
     return box;
   };
