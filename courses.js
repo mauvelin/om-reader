@@ -437,6 +437,28 @@ async function viewLesson(id, qs) {
     fold.textContent = off ? '展開' : '收起';
     fold.setAttribute('aria-pressed', String(off));
   });
+  // 標記看完（本人 2026-11-04，比照練習頁的「練完了」）：圓圈打勾，播放中也在。看完的標記會同步到電腦與其他裝置，
+  // 依 learn 的規則「看完不取消」（任何一台說看完就是看完），所以按下去先確認；看完後變綠、不能再按
+  const doneBtn = h('button', { type: 'button', class: 'btn quiet done-ic' }, svgIcon('done'));
+  const paintDone = () => {
+    const p = lessonProgress(l);
+    const on = !!(p && p.completed);
+    const label = on ? '已看完' : '標記這一講看完';
+    doneBtn.classList.toggle('on', on); doneBtn.disabled = on;
+    doneBtn.setAttribute('aria-label', label); doneBtn.title = label;
+  };
+  doneBtn.addEventListener('click', () => {
+    if (!key) return;
+    if (!confirm(`標記「${l.order ? l.order + ' ' : ''}${l.lesson_title || l.title}」看完？\n看完的標記會同步到電腦和其他裝置，之後無法取消。`)) return;
+    const prev = LREC.progress[key] || {};
+    const el = mine() ? playerEl() : null;
+    const dur = el && Number.isFinite(el.duration) ? el.duration : 0;
+    LREC.progress[key] = { t_s: el ? Math.round(el.currentTime * 10) / 10 : (prev.t_s || 0), duration_s: dur ? Math.round(dur) : (prev.duration_s || 0), completed: true, at: new Date().toISOString() };
+    LREC.recent[l.id] = { course_id: c.id, at: LREC.progress[key].at };
+    lrecSave();
+    paintDone();
+  });
+  paintDone();
   playBtn.hidden = mine();
   const playable = !!key && (s.enabled || !!offE || !!altOff);
   // 下載鈕跟著「影片｜聲音」的選擇換
@@ -475,7 +497,7 @@ async function viewLesson(id, qs) {
     srcRow.hidden = !alt || mine();
   };
   if (playable) media.append(srcRow, h('div', { class: 'lesson-ctl' }, playBtn, rateSel, back10, fwd10,
-    h('label', { class: 'check follow', for: 'follow', title: '逐字稿跟隨播放' }, followBox, '跟隨'), fold, swap, offSlot));
+    h('label', { class: 'check follow', for: 'follow', title: '逐字稿跟隨播放' }, followBox, '跟隨'), fold, swap, doneBtn, offSlot));
   if (altKeys.length && s.enabled && gHasToken()) {   // 雲端硬碟上有沒有同名聲音檔：查到再顯示切換（不擋畫面）
     driveAlt(key, l.media.source_file).then((f) => { if (f) alt = { name: f.name, size: f.size }; else if (!altOff) alt = null; paintSrc(); paintOff(); }).catch(() => {});
   }

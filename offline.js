@@ -272,7 +272,7 @@ async function offSweep() {
 /* ── 介面：一顆按鈕（講次頁、練習頁），整門課下載（課程頁），設定頁一節 ── */
 // 狀態（字要短，講次頁控制列只有一行；本人 2026-11-04）：沒下載 →「下載」；下載中 →「下載 45%」（點了暫停）；
 // 暫停 →「繼續 45%」；排隊 →「排隊中」；完成 →「✓ 已下載」（點了問要不要刪）
-// opts.icons：講次頁控制列用圖示（本人 2026-11-04）——沒下載＝下載圖示；已下載＝打勾圖示；下載中＝45%；暫停＝下載圖示＋45%；排隊＝時鐘
+// opts.icons：講次頁控制列用圖示（本人 2026-11-04）——沒下載＝下載圖示；已下載＝打勾圖示；下載中＝45%（強調色）；暫停＝45%（灰）；排隊＝時鐘
 function offButton(spec, onChange, opts = {}) {
   const btn = h('button', { type: 'button', class: 'btn quiet off-btn' + (opts.icons ? ' off-icon' : ''), title: '下載到這支手機，沒網路也能看、能聽' });
   const paint = async () => {
@@ -286,7 +286,7 @@ function offButton(spec, onChange, opts = {}) {
     if (opts.icons) {
       const st = !e ? 'none' : e.state === 'paused' && !e.done ? 'none' : e.state;
       btn.replaceChildren(...(st === 'none' ? [svgIcon('download')] : st === 'done' ? [svgIcon('downloaded')] : st === 'queued' ? [svgIcon('clock')]
-        : st === 'paused' ? [svgIcon('download'), h('span', { class: 'off-pct' }, `${offPct(e)}%`)] : [h('span', { class: 'off-pct' }, `${offPct(e)}%`)]));
+        : st === 'paused' ? [h('span', { class: 'off-pct paused' }, `${offPct(e)}%`)] : [h('span', { class: 'off-pct' }, `${offPct(e)}%`)]));   // 暫停＝灰色百分比，下載中＝強調色
     } else {
       btn.textContent = !e ? '下載' : e.state === 'done' ? (short ? '✓' : '✓ 已下載') : e.state === 'paused' ? (e.done ? (short ? '繼續' : `繼續 ${offPct(e)}%`) : '下載') : e.state === 'queued' ? (short ? '排隊' : '排隊中') : (short ? `${offPct(e)}%` : `下載 ${offPct(e)}%`);
     }

@@ -369,7 +369,7 @@ label.check input { width: 20px; height: 20px; accent-color: var(--accent); }
 .rate-row { display: flex; flex-wrap: wrap; gap: 6px; margin: var(--sp-2) 0; }
 .rate-row .filter { min-height: 36px; padding: 4px 10px; font-variant-numeric: tabular-nums; }
 /* 講次頁控制列：一行放完（播放｜速度｜跟隨｜收起影片） */
-.lesson-ctl { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin: var(--sp-2) 0 0; }
+.lesson-ctl { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; margin: var(--sp-2) 0 0; }
 .lesson-ctl .btn { min-height: 38px; height: 38px; padding: 0 8px; white-space: nowrap; }
 .lesson-ctl .btn.primary { gap: 6px; font-variant-numeric: tabular-nums; }
 .lesson-ctl .btn .i { width: 18px; height: 18px; }
@@ -380,7 +380,6 @@ label.check input { width: 20px; height: 20px; accent-color: var(--accent); }
   -webkit-appearance: none; appearance: none; cursor: pointer; }
 .rate-sel:active { background: var(--chip); }
 .lesson-ctl label.check.follow { min-height: 38px; gap: 4px; padding: 0 2px; font-size: var(--fs-chip); }
-.lesson-ctl .fold { margin-left: auto; }
 .video-off .lesson-slot video { display: none; }
 .lesson-media > .status:empty { display: none; }
 /* 離線音檔 */
@@ -389,7 +388,14 @@ label.check input { width: 20px; height: 20px; accent-color: var(--accent); }
 .lesson-ctl .skip { padding: 4px 6px; min-width: 38px; }
 .lesson-ctl .skip .i, .lesson-ctl .fold .i, .lesson-ctl .off-icon .i { width: 24px; height: 24px; }
 .lesson-ctl .fold[data-to] { min-width: 40px; padding: 0 8px; }
-.off-icon { gap: 2px; min-width: 40px; }
+.lesson-ctl .done-ic { min-width: 36px; padding: 0 6px; }
+.lesson-ctl .done-ic .i { width: 24px; height: 24px; }
+.lesson-ctl .done-ic.on { color: var(--ink-moss); }
+.lesson-ctl .done-ic:disabled { background: transparent; border-color: transparent; }
+.off-icon { gap: 2px; min-width: 36px; }
+.lesson-ctl .off-icon { padding: 0 6px; }
+.off-icon .off-pct { color: var(--accent); }
+.off-icon .off-pct.paused { color: var(--muted); }
 .off-icon .off-pct { font-size: var(--fs-label); font-variant-numeric: tabular-nums; }
 .off-icon.on { color: var(--ink-moss); }
 /* 練習播放頁：播放鈕以外都是圖示（本人 2026-11-04） */
@@ -406,8 +412,9 @@ label.check input { width: 20px; height: 20px; accent-color: var(--accent); }
 .src-row { margin: var(--sp-2) 0 0; gap: 6px; }
 .src-row .filter { min-height: 34px; padding: 2px 12px; }
 .off-course .src-row { margin: 0; }
-.off-slot { margin-left: auto; display: inline-flex; }
-.lesson-ctl .fold:not([hidden]) + .off-slot { margin-left: 0; }
+.off-slot { display: inline-flex; }
+/* 「跟隨」之後的鈕（收起／換影片聲音／看完／下載）一起靠右 */
+.lesson-ctl label.check.follow { margin-right: auto; }
 .off-count { font-size: var(--fs-chip); }
 .off-list li.choice a { color: var(--fg); text-decoration: none; display: flex; flex-direction: column; min-width: 0; flex: 1; }
 .off-list li.choice .m { color: var(--muted); font-size: var(--fs-chip); }
