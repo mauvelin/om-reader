@@ -475,6 +475,12 @@ label.check input { width: 20px; height: 20px; accent-color: var(--accent); }
 .list a.item .chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
 .concept-arrow { margin-left: 4px; color: var(--fg); text-decoration: none; }
 .concept-refs h3 { margin: var(--sp-4) 0 var(--sp-1); font-size: 1em; }
+/* 概念頁：出現在的講次（依課程分組的標籤）與內文的時間連結 */
+.concept-where { margin: var(--sp-2) 0 var(--sp-4); }
+.concept-where p { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: var(--sp-2) 0; }
+.concept-where .where-course { margin-right: 4px; font-weight: var(--fw-strong); color: var(--fg); text-decoration-color: var(--link-line); text-underline-offset: 3px; }
+.concept-where a.tag { color: var(--fg); text-decoration: none; }
+.md a.ts-cite { font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--fg); text-decoration-color: var(--accent); text-underline-offset: 3px; }
 .concept-refs h3 a { color: var(--fg); text-decoration-color: var(--link-line); }
 li.choice { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--sp-2); padding: var(--sp-2) var(--sp-3); }
 li.choice .row { margin: 0; }

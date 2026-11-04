@@ -553,12 +553,15 @@ async function viewPage(path) {
   if (d.u && /^https?:/i.test(d.u) && !/(^|\.)notion\.(so|site|com)\//i.test(d.u.replace(/^https?:\/\//, ''))) actions.append(h('a', { class: 'btn', href: d.u, target: '_blank', rel: 'noopener noreferrer' }, svgIcon('external'), '原文'));
   const body = h('div');
   const ext = extOf(d.p);
+  const cites = typeof conceptCites === 'function' && d.p.startsWith('vault/wiki/') ? await conceptCites(d).catch(() => null) : null;
   if (d.s != null) {
     const text = await docText(d);
     if (text == null) body.append(h('p', { class: 'note' }, '這一頁的內容還沒同步。'));
     else if (ext === 'md') {
       const fn = /^wiki\/(concepts|people)$/.test(d.l) ? { map: new Map() } : null;
-      const mdRoot = renderMarkdown(splitFrontmatter(text).body, d.p, fn);
+      let mdBody = splitFrontmatter(text).body;
+      if (cites) mdBody = cites.linkify(mdBody, text.slice(0, text.length - mdBody.length).split('\n').length - 1);   // 內文時間點變連結（courses.js）
+      const mdRoot = renderMarkdown(mdBody, d.p, fn);
       const pageDye = dyeOf(d.ar);
       if (pageDye) mdRoot.style.setProperty('--link-line', `var(--ink-${pageDye})`);
       d._fn = fn;
@@ -604,7 +607,7 @@ async function viewPage(path) {
   }
   const kids = [head, chips];
   if (actions.childElementCount) kids.push(actions);
-  if (typeof conceptLessonRefs === 'function') { const refs = await conceptLessonRefs(d).catch(() => null); if (refs) kids.push(refs); }
+  if (cites) kids.push(cites.where);   // 出現在的講次
   const nav = docNav(d);
   if (nav) kids.push(nav);
   kids.push(body);

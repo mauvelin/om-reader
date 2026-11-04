@@ -964,18 +964,51 @@ async function openDrivePdf(name, row, box, btn) {   // 回傳 true＝原檔顯�
   } catch (e) { box.replaceChildren(h('p', { class: 'note' }, (e.status === 401 ? 'Google 登入已過期，請重新登入；' : '原檔讀取失敗（' + e.message + '）；') + '下面是文字版。')); return false; }
 }
 // wiki 概念頁：列出課程裡引用這一頁的地方（learn 匯出的 by_page），點了開那一講那一秒
-async function conceptLessonRefs(d) {
+// 概念頁的課程引用（照 learn 的概念頁做；本人 2026-11-04）：
+// ① 內文裡的 [hh:mm:ss] 變成連結，點了打開那一講、從那一秒開始——learn 匯出檔記了「概念頁第幾行引用哪一講幾秒」
+//   （line_no 從檔案第一行算，含前言）；同一行的時間依秒數對上，對不上的照原樣
+// ② 最上面「出現在的講次・N 門課 M 處」，依課程分組，每一講一個標籤（取代原本收合的清單）
+// ③ 引用課程摘錄的上標註腳照舊打開摘錄筆記（本人決定不改成課程頁）
+async function conceptCites(d) {
   if (!d.p.startsWith('vault/wiki/')) return null;
   const ex = await learnExport().catch(() => null);
   const refs = ex && ex.concepts && ex.concepts.by_page ? ex.concepts.by_page[d.p.slice(6)] : null;
   if (!refs || !refs.length) return null;
   const ci = await courseIndex();
-  const items = refs.map((r) => ({ r, x: ci && ci.lessonById.get(r.lesson_id) })).filter((y) => y.x);
-  if (!items.length) return null;
-  return h('details', { class: 'aux' }, h('summary', null, `課程裡提到這個概念的地方（${items.length}）`),
-    listOf(items.map(({ r, x }) => h('li', null, h('a', { class: 'item', href: `#/lesson/${x.lesson.id}?t=${r.t_s || 0}` },
-      h('span', { class: 't' }, `${x.lesson.order ? x.lesson.order + '　' : ''}${x.lesson.lesson_title || x.lesson.title}`),
-      h('span', { class: 'm' }, `${x.course.title}${r.t_s != null ? '・' + clock(r.t_s) : ''}`))))));
+  const ok = refs.filter((r) => ci && ci.lessonById.get(r.lesson_id));
+  if (!ok.length) return null;
+  const byLine = new Map();
+  for (const r of ok) { if (!byLine.has(r.line_no)) byLine.set(r.line_no, []); byLine.get(r.line_no).push(r); }
+  const lessonName = (x) => `${x.lesson.order ? x.lesson.order + ' ' : ''}${x.lesson.lesson_title || x.lesson.title}`;
+  const linkify = (body, offset) => body.split('\n').map((line, i) => {
+    const rs = byLine.get(i + 1 + offset);
+    if (!rs) return line;
+    const used = new Set();
+    return line.replace(/\[(\d{2}):(\d{2}):(\d{2})\]/g, (m, a, b, c) => {
+      const t = (+a) * 3600 + (+b) * 60 + (+c);
+      const k = rs.findIndex((r, j) => !used.has(j) && r.t_s === t);
+      if (k < 0) return m;
+      used.add(k);
+      const x = ci.lessonById.get(rs[k].lesson_id);
+      return `<a class="ts-cite" href="#/lesson/${encodeURIComponent(rs[k].lesson_id)}?t=${t}" title="${md.utils.escapeHtml(`${x.course.title}｜${lessonName(x)}`)}">${m}</a>`;
+    });
+  }).join('\n');
+  const groups = [];
+  for (const r of ok) {
+    const x = ci.lessonById.get(r.lesson_id);
+    let g = groups.find((y) => y.c.id === x.course.id);
+    if (!g) groups.push(g = { c: x.course, n: new Map() });
+    g.n.set(r.lesson_id, (g.n.get(r.lesson_id) || 0) + 1);
+  }
+  const where = h('section', { class: 'concept-where' },
+    h('div', { class: 'sec-title' }, h('span', null, `出現在的講次・${groups.length} 門課 ${ok.length} 處`)),
+    groups.map((g) => h('p', null, h('a', { class: 'where-course', href: '#/course/' + encodeURIComponent(g.c.id) }, g.c.title),
+      [...g.n].sort((p, q) => g.c.lessons.findIndex((l) => l.id === p[0]) - g.c.lessons.findIndex((l) => l.id === q[0])).map(([id, n]) => {
+        const x = ci.lessonById.get(id);
+        return h('a', { class: 'tag where-lesson', href: '#/lesson/' + encodeURIComponent(id), title: lessonName(x) },
+          `${x.lesson.order || x.lesson.date || ''} ${x.lesson.lesson_title || x.lesson.title}`.trim() + (n > 1 ? `・${n}` : ''));
+      }))));
+  return { linkify, where };
 }
 // 文章頁上的逐字稿：給一個「講次頁」按鈕（課程索引已載入時）
 function lessonLinkFor(p) {
