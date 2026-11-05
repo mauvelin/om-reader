@@ -608,6 +608,7 @@ async function viewPage(path, q) {
   pushHistory(d.p).catch(() => {});
   const actions = h('div', { class: 'doc-actions' });
   if (d.nid) actions.append(...notionButtons(d.nid));
+  const findHere = d.s != null ? findButton(() => body) : null;   // 有文字的頁：頁內搜尋（放在按鈕列最前面）
   if (d.u && /^https?:/i.test(d.u) && !/(^|\.)notion\.(so|site|com)\//i.test(d.u.replace(/^https?:\/\//, ''))) actions.append(h('a', { class: 'btn', href: d.u, target: '_blank', rel: 'noopener noreferrer' }, svgIcon('external'), '原文'));
   const body = h('div');
   const ext = extOf(d.p);
@@ -691,6 +692,7 @@ async function viewPage(path, q) {
   if (mocArea) kids.push(...areaExtras(cat, mocArea));
   const backs = (L.back.get(d.p) || []).map((p) => cat.byPath.get(p)).filter(Boolean);
   if (backs.length) { const t = secTitle(`被引用（${backs.length}）`); kids.push(t, listOf(backs.slice(0, 200).map((x) => itemLink(x)))); jumps.push(['被引用', backs.length, t]); }
+  if (findHere) actions.prepend(findHere);
   for (const [label, n, target] of jumps) {
     actions.append(h('button', { type: 'button', class: 'btn jump', 'aria-label': `${label} ${n} 則，捲到頁面最下面`, onclick: () => {
       const bar = document.querySelector('.bar');
@@ -731,18 +733,20 @@ function markHits(root, terms) {
   }
   return marks;
 }
-// 頁內搜尋列：「詞」第幾處／共幾處、上一處、下一處、關閉；黏在頂列下方。
-// opts.top：黏住的位置（講次頁要算上釘住的播放區與頁籤列）；opts.from：從這個元素（含）之後的第一處開始
+// 頁內搜尋列：輸入框、第幾處／共幾處、上一處、下一處、關閉；黏在頂列下方。
+// 從搜尋結果進來時帶著詞（找不到就不出現）；按頁上的搜尋鈕時空白打開、游標放進輸入框（本人 2026-11-05）。
+// opts.top：黏住的位置（講次頁要算上釘住的播放區與頁籤列）；opts.from：從這個元素（含）之後的第一處開始；
+// opts.focus：空白打開
 function findBar(body, q, opts = {}) {
-  const marks = markHits(body, q.trim().split(/\s+/));
-  if (!marks.length) return;
   const topPx = opts.top || (() => { const b = document.querySelector('.bar'); return b ? b.getBoundingClientRect().height : 0; });
-  let cur = 0;
-  let first = 0;
-  if (opts.from) { const k = marks.findIndex((m) => opts.from.contains(m) || (opts.from.compareDocumentPosition(m) & Node.DOCUMENT_POSITION_FOLLOWING)); if (k >= 0) first = k; }
+  let marks = [], cur = 0;
   const count = h('span', { class: 'find-n', role: 'status' });
-  const bar = h('div', { class: 'find-bar' }, h('span', { class: 'find-q' }, `「${q.trim()}」`), count);
+  const input = h('input', { type: 'search', class: 'find-input', enterkeyhint: 'search', placeholder: '在這一頁搜尋', 'aria-label': '在這一頁搜尋' });
+  input.value = (q || '').trim();
+  const bar = h('div', { class: 'find-bar' }, input, count);
+  const unmark = () => { marks.forEach((m) => m.replaceWith(m.textContent)); marks = []; body.normalize(); };
   const go = (i) => {
+    if (!marks.length) return;
     marks[cur].classList.remove('cur');
     cur = (i + marks.length) % marks.length;
     const m = marks[cur];
@@ -756,12 +760,32 @@ function findBar(body, q, opts = {}) {
     const r = m.getBoundingClientRect();
     window.scrollTo({ top: Math.max(0, r.top + window.scrollY - off - Math.max(0, (bottom - off - r.height) / 3)) });
   };
+  // 找：先拿掉上一輪的標示再標；from 只用在第一輪（從搜尋結果帶進來的那一秒）
+  let from = opts.from || null;
+  const run = () => {
+    unmark();
+    const terms = input.value.trim().split(/\s+/).filter(Boolean);
+    if (!terms.length) { count.textContent = ''; return 0; }
+    marks = markHits(body, terms);
+    cur = 0;
+    if (!marks.length) { count.textContent = '找不到'; return 0; }
+    let first = 0;
+    if (from) { const k = marks.findIndex((m) => from.contains(m) || (from.compareDocumentPosition(m) & Node.DOCUMENT_POSITION_FOLLOWING)); if (k >= 0) first = k; }
+    from = null;
+    go(first);
+    return marks.length;
+  };
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); run(); input.blur(); } });
+  input.addEventListener('search', () => { if (!input.value) { unmark(); count.textContent = ''; } });
   bar.append(
     h('button', { type: 'button', class: 'btn find-ic up', 'aria-label': '上一處', onclick: () => go(cur - 1) }, svgIcon('down')),
     h('button', { type: 'button', class: 'btn find-ic', 'aria-label': '下一處', onclick: () => go(cur + 1) }, svgIcon('down')),
-    h('button', { type: 'button', class: 'btn find-ic', 'aria-label': '關閉頁內搜尋', onclick: () => {
-      marks.forEach((m) => m.replaceWith(m.textContent)); bar.remove();
-    } }, svgIcon('close')));
+    h('button', { type: 'button', class: 'btn find-ic', 'aria-label': '關閉頁內搜尋', onclick: () => { unmark(); bar.remove(); } }, svgIcon('close')));
+  if (!opts.focus) {   // 帶著詞進來：先標，找不到就不出現
+    const tmp = markHits(body, input.value.split(/\s+/).filter(Boolean));
+    tmp.forEach((m) => m.replaceWith(m.textContent)); body.normalize();
+    if (!tmp.length) return null;
+  }
   body.before(bar);
   // 黏住的位置隨版面重算：講次頁的播放區載入影片後會長高，只算一次會蓋在影片上
   const place = () => { bar.style.top = topPx() + 'px'; };
@@ -770,8 +794,19 @@ function findBar(body, q, opts = {}) {
   const later = () => { if (queued) return; queued = true; requestAnimationFrame(() => { queued = false; if (bar.isConnected) place(); }); };
   window.addEventListener('scroll', later, { passive: true, signal: viewAbort.signal });
   window.addEventListener('resize', later, { signal: viewAbort.signal });
-  requestAnimationFrame(() => go(first));
+  if (opts.focus) input.focus();
+  else requestAnimationFrame(() => run());
   return bar;
+}
+// 頁上的「在這一頁搜尋」圖示鈕：已經開著就把游標放回輸入框，否則空白打開
+function findButton(getBody, opts = {}) {
+  return h('button', { type: 'button', class: 'btn find-open', 'aria-label': '在這一頁搜尋', title: '在這一頁搜尋', onclick: () => {
+    const body = getBody();
+    if (!body) return;
+    const open = body.previousElementSibling && body.previousElementSibling.classList.contains('find-bar') ? body.previousElementSibling : null;
+    if (open) open.querySelector('.find-input').focus();
+    else findBar(body, '', { ...opts, focus: true });
+  } }, svgIcon('search'));
 }
 // 非本人陳述的段落標示（SCHEMA 既有定義，字樣在資料包 catalog.ui.section_labels）
 function labelSections(root, d) {

@@ -253,7 +253,7 @@ function tabBar(tabs, cur, onPick) {
   const bar = h('div', { class: 'seg-tabs', role: 'tablist' });
   for (const [k, label] of tabs) {
     bar.append(h('button', { type: 'button', role: 'tab', class: 'filter', 'aria-pressed': String(k === cur), 'aria-selected': String(k === cur),
-      onclick: (e) => { bar.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b === e.currentTarget))); onPick(k); } }, label));
+      onclick: (e) => { bar.querySelectorAll('button[role=tab]').forEach((b) => b.setAttribute('aria-pressed', String(b === e.currentTarget))); onPick(k); } }, label));
   }
   return bar;
 }
@@ -710,7 +710,7 @@ async function viewLesson(id, qs) {
   let pickHint = null;
   const endPick = () => { pane.classList.remove('picking'); if (pickHint) { pickHint.remove(); pickHint = null; } };
   const goTab = async (k) => {
-    tabsEl.querySelectorAll('button').forEach((b, j) => b.setAttribute('aria-pressed', String(tabs[j][0] === k)));
+    tabsEl.querySelectorAll('button[role=tab]').forEach((b, j) => b.setAttribute('aria-pressed', String(tabs[j][0] === k)));
     await show(k);
   };
   const startPick = async () => {
@@ -826,6 +826,7 @@ async function viewLesson(id, qs) {
     for (const n of segs) { if (Number(n.dataset.t) <= startT) target = n; else break; }
     if (target) { target.classList.add('flash'); requestAnimationFrame(() => scrollToSeg(target)); }
   }
+  tabsEl.prepend(findButton(() => pane, { top: visTop }));   // 頁籤列最前面：在目前這個分頁裡搜尋
   if (findQ && typeof findBar === 'function') findBar(pane, findQ, { top: visTop, from: startT ? [...pane.querySelectorAll('.seg[data-t]')].filter((n) => Number(n.dataset.t) <= startT).pop() : null });
 
   // 播放畫面：這一講的播放器已經在跑（例如從底部小播放器點回來）就借進來；之後才開的，開好會自己借進來
@@ -989,8 +990,8 @@ function courseSearchBox(only) {
         const qq = encodeURIComponent(q);   // 點進去照樣標出搜尋的詞、捲到命中那一處（本人 2026-11-05）
         const href = x.l ? `#/lesson/${x.l.id}?t=${x.t || 0}${x.kind === '摘要' ? '&tab=summary' : ''}&q=${qq}` : pageHref(x.d.p) + '?q=' + qq;
         const where = x.l ? `${x.l.order ? x.l.order + '　' : ''}${x.l.lesson_title || x.l.title}` : docTitle(x.d);
-        return h('li', null, h('a', { class: 'item', href }, h('span', { class: 't' }, where),
-          h('span', { class: 'm' }, [x.kind, x.t != null ? clock(x.t) : null, only ? null : x.c.title].filter(Boolean).join('・')), markTerms(x.text, terms)));
+        return h('li', null, h('a', { class: 'item', href }, h('span', { class: 't' }, where, h('span', { class: 'kind-tag' }, x.kind)),   // 種類小標籤，同頂列搜尋
+          h('span', { class: 'm' }, [x.t != null ? clock(x.t) : null, only ? null : x.c.title].filter(Boolean).join('・')), markTerms(x.text, terms)));
       })));
   };
   input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); input.blur(); go(); } });
