@@ -1062,6 +1062,12 @@ async function conceptCites(d) {
     const rs = byLine.get(i + 1 + offset);
     if (!rs) return line;
     const used = new Set();
+    // 行尾的來源〔[[raw/課程摘錄]]〕：點了打開摘錄、標出這一行第一個時間點並捲過去（本人 2026-11-05）
+    const firstTs = (line.match(/\[\d{2}:\d{2}:\d{2}\]/) || [])[0];
+    if (firstTs) line = line.replace(/\[\[(raw\/[^\]|#]+)(?:\|([^\]]*))?\]\]/g, (m, target, label) => {
+      const x = resolveLink(target, d.p);
+      return x ? `<a href="${pageHref(x.p)}?q=${encodeURIComponent(firstTs)}">${md.utils.escapeHtml(label || docTitle(x))}</a>` : m;
+    });
     return line.replace(/\[(\d{2}):(\d{2}):(\d{2})\]/g, (m, a, b, c) => {
       const t = (+a) * 3600 + (+b) * 60 + (+c);
       const k = rs.findIndex((r, j) => !used.has(j) && r.t_s === t);
@@ -1087,6 +1093,32 @@ async function conceptCites(d) {
           `${x.lesson.order || x.lesson.date || ''} ${x.lesson.lesson_title || x.lesson.title}`.trim() + (n > 1 ? `・${n}` : ''));
       }))));
   return { linkify, where };
+}
+// 課程摘錄（raw 的整門課摘要）裡的時間點：連到那一講的那一秒（本人 2026-11-05）。
+// 每一講是一節「## <講次代號> 講名」，節下第一個連結是那一講的 Notion 頁（learn concepts.py 同一套對法）；
+// 講次的 id 就是 Notion 頁 id。無錄音的場次對不到講次，時間點照原樣
+async function digestCites(d) {
+  const kind = typeof docKindOf === 'function' ? docKindOf(d.p) : null;
+  if (!kind || kind.label !== '整門課摘要') return null;
+  const ci = await courseIndex();
+  if (!ci) return null;
+  const linkify = (body) => {
+    let lesson = null, seenLink = false;
+    return body.split('\n').map((line) => {
+      if (/^## \S+ /.test(line)) { lesson = null; seenLink = false; return line; }
+      if (!seenLink && /https:\/\//.test(line)) {
+        seenLink = true;
+        const m = /(?<![0-9a-f])([0-9a-f]{32}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?![0-9a-f])/.exec(line);
+        const x = m && ci.lessonById.get(m[1].replace(/-/g, ''));
+        lesson = x ? x.lesson : null;
+      }
+      if (!lesson) return line;
+      const id = encodeURIComponent(lesson.id);
+      return line.replace(/\[(\d{2}):(\d{2}):(\d{2})\]/g, (mm, a, b, c) =>
+        `<a class="ts-cite" href="#/lesson/${id}?t=${(+a) * 3600 + (+b) * 60 + (+c)}" title="${md.utils.escapeHtml(lessonName(lesson))}">${mm}</a>`);
+    }).join('\n');
+  };
+  return { linkify: (body) => linkify(body), where: null };
 }
 // 文章頁上的逐字稿：給一個「講次頁」按鈕（課程索引已載入時）
 // 逐字稿路徑 → 講次（全站搜尋用：命中逐字稿就連到那一講的那一秒）

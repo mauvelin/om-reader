@@ -612,7 +612,8 @@ async function viewPage(path, q) {
   if (d.u && /^https?:/i.test(d.u) && !/(^|\.)notion\.(so|site|com)\//i.test(d.u.replace(/^https?:\/\//, ''))) actions.append(h('a', { class: 'btn', href: d.u, target: '_blank', rel: 'noopener noreferrer' }, svgIcon('external'), '原文'));
   const body = h('div');
   const ext = extOf(d.p);
-  const cites = typeof conceptCites === 'function' && d.p.startsWith('vault/wiki/') ? await conceptCites(d).catch(() => null) : null;
+  const cites = typeof conceptCites === 'function' && d.p.startsWith('vault/wiki/') ? await conceptCites(d).catch(() => null)
+    : typeof digestCites === 'function' ? await digestCites(d).catch(() => null) : null;   // 課程摘錄的時間點也變連結
   if (d.s != null) {
     const text = await docText(d);
     if (text == null) body.append(h('p', { class: 'note' }, '這一頁的內容還沒同步。'));
