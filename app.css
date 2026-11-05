@@ -609,3 +609,5 @@ mark.hit.cur { background: var(--accent); color: var(--bg); }
 .login-sheet .card { width: 100%; max-width: 520px; margin: 0; box-shadow: var(--shadow-card); }
 .login-sheet .login-why { font-weight: var(--fw-strong); margin: 0 0 var(--sp-2); }
 .login-sheet .status:empty { display: none; }
+/* 用戶端 ID 的密碼管理帳號欄：給 iOS 認得「帳號＋密碼」一組，畫面上只留一行小字 */
+.keychain-form .keychain-user { width: 100%; border: 0; background: transparent; padding: 0; min-height: 0; color: var(--muted); font-size: 12px; }

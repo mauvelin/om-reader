@@ -13,11 +13,13 @@ async function gSettings() {
   const s = (await kvGet('google')) || {};
   let client = '';
   if (s.client && KEY) { try { client = td.decode(await open_(s.client)); } catch (e) { client = ''; } }
-  return { enabled: !!s.enabled, client };
+  // 預設啟用（本人 2026-11-05）：新裝的 App 沒有這個設定時當成勾選；本人關掉過（存成 false）就照舊
+  return { enabled: s.enabled == null ? true : !!s.enabled, client };
 }
 async function gSaveSettings({ enabled, client }) {
   const cur = (await kvGet('google')) || {};
-  const next = { enabled: enabled == null ? !!cur.enabled : !!enabled, client: cur.client || null };
+  const was = cur.enabled == null ? true : !!cur.enabled;   // 沒存過＝預設啟用（同 gSettings）
+  const next = { enabled: enabled == null ? was : !!enabled, client: cur.client || null };
   if (client != null) next.client = client ? await seal(te.encode(client)) : null;
   await kvSet('google', next);
 }

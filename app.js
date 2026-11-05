@@ -20,14 +20,22 @@ async function googleSection() {
   const enableRow = h('label', { class: 'check', for: 'g-enable' }, enable, '啟用：在 App 裡播放雲端硬碟的影音、讀講義原檔、同步學習紀錄');
   if (!s.enabled) return [secTitle('Google 雲端硬碟'), h('div', { class: 'card' }, enableRow,
     h('p', { class: 'muted' }, '關閉中。啟用後才會出現 Google 登入、播放器與學習紀錄同步；關閉時會丟掉記憶體裡的 Google 登入。'))];
-  const client = h('input', { id: 'g-client', type: 'text', autocomplete: 'off', autocapitalize: 'off', spellcheck: 'false',
+  // 用戶端 ID 做成「帳號＋密碼」一組：iOS 的密碼管理才會問要不要存，重裝 App 後點這格就能用鑰匙圈填（本人 2026-11-05）。
+  // 帳號固定是「Google OAuth 用戶端 ID」，和資料 repo／token 那一筆分得開
+  const clientUser = h('input', { id: 'g-client-user', type: 'text', name: 'username', autocomplete: 'username', readonly: true,
+    class: 'keychain-user', value: 'Google OAuth 用戶端 ID', 'aria-label': '密碼管理裡這一筆的名稱' });
+  const client = h('input', { id: 'g-client', type: 'password', name: 'password', autocomplete: 'current-password', autocapitalize: 'off', spellcheck: 'false',
     placeholder: s.client ? '（已存，留空表示不變）' : '….apps.googleusercontent.com' });
-  const saveBtn = h('button', { type: 'button', class: 'btn' }, '儲存用戶端 ID');
-  saveBtn.addEventListener('click', async () => {
+  const saveBtn = h('button', { type: 'submit', class: 'btn' }, '儲存用戶端 ID');
+  const clientForm = h('form', { class: 'keychain-form', autocomplete: 'on' });
+  clientForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
     const v = client.value.trim();
     if (!/\.apps\.googleusercontent\.com$/.test(v)) { out.textContent = '用戶端 ID 應該以 .apps.googleusercontent.com 結尾。'; return; }
     await gSaveSettings({ client: v }); client.value = ''; out.textContent = '已儲存（加密存在這支手機）。';
   });
+  clientForm.append(clientUser, h('div', { class: 'field' }, h('label', { for: 'g-client' }, 'OAuth 用戶端 ID'), client), h('div', { class: 'row' }, saveBtn),
+    h('p', { class: 'muted' }, '按「儲存用戶端 ID」時，iPhone 會問要不要存進密碼；存了之後重裝 App，點這一格就能從鑰匙圈填入（選「Google OAuth 用戶端 ID」那一筆）。'));
   const loginBtn = h('button', { type: 'button', class: gHasToken() ? 'btn' : 'btn primary' }, gHasToken() ? '重新登入 Google' : '登入 Google');
   loginBtn.addEventListener('click', () => gLogin({ returnHash: '#/settings' }).catch((e) => { out.textContent = e.message; }));
   const state = h('p', { class: 'muted set-line' }, gHasToken() ? `已登入，約 ${gMinutesLeft()} 分鐘後失效。` : '還沒登入。登入約一小時失效，只存在記憶體。');
@@ -52,7 +60,7 @@ async function googleSection() {
   });
   const more = h('details', { class: 'set-more', open: !s.client }, h('summary', null, '設定：啟用、OAuth 用戶端 ID、用檔名測試'),
     enableRow,
-    h('div', { class: 'field' }, h('label', { for: 'g-client' }, 'OAuth 用戶端 ID'), client), h('div', { class: 'row' }, saveBtn),
+    clientForm,
     h('div', { class: 'field' }, h('label', { for: 'g-q' }, '測試：用檔名找一支來播'), q), h('div', { class: 'row' }, findBtn), found);
   return [secTitle('Google 雲端硬碟'), h('div', { class: 'card' }, state, h('div', { class: 'row' }, loginBtn), out, more)];
 }
