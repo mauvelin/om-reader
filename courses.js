@@ -1094,31 +1094,41 @@ async function conceptCites(d) {
       }))));
   return { linkify, where };
 }
-// 課程摘錄（raw 的整門課摘要）裡的時間點：連到那一講的那一秒（本人 2026-11-05）。
-// 每一講是一節「## <講次代號> 講名」，節下第一個連結是那一講的 Notion 頁（learn concepts.py 同一套對法）；
-// 講次的 id 就是 Notion 頁 id。無錄音的場次對不到講次，時間點照原樣
+// 原始筆記裡的 [hh:mm:ss]：連到那一講的那一秒（本人 2026-11-05）。誰的時間點、對到哪一講：
+// - 逐字稿原文頁：就是它自己那一講
+// - 講義、課後筆記：課程索引記它只屬於一講時，連到那一講（橫跨多講、或索引沒記的不猜）
+// - 其他頁（課程摘錄，登記不登記都算）：每一節「## <講次代號> 講名」下第一個連結是那一講的 Notion 頁，
+//   對回講次（learn concepts.py 同一套對法；講次 id 就是 Notion 頁 id），只連那一節裡的時間點；對不到的節照原樣
+// 外部講座的筆記沒有能從某一秒開始播的連結，不做
+const TS_RE = /\[(\d{2}):(\d{2}):(\d{2})\]/g;
+const NOTION_ID_RE = /(?<![0-9a-f])([0-9a-f]{32}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?![0-9a-f])/;
+function tsLinks(line, lesson) {
+  const id = encodeURIComponent(lesson.id);
+  return line.replace(TS_RE, (m, a, b, c) =>
+    `<a class="ts-cite" href="#/lesson/${id}?t=${(+a) * 3600 + (+b) * 60 + (+c)}" title="${md.utils.escapeHtml(lessonName(lesson))}">${m}</a>`);
+}
 async function digestCites(d) {
-  const kind = typeof docKindOf === 'function' ? docKindOf(d.p) : null;
-  if (!kind || kind.label !== '整門課摘要') return null;
+  if (!/^vault\/(raw|self)\//.test(d.p)) return null;
   const ci = await courseIndex();
   if (!ci) return null;
+  const kind = typeof docKindOf === 'function' ? docKindOf(d.p) : null;
+  const one = kind && kind.label === '逐字稿' ? kind.lesson
+    : kind && (kind.label === '講義' || kind.label === '摘要') && kind.lessons.length === 1 ? kind.lessons[0] : null;
+  if (one) return { linkify: (body) => body.split('\n').map((line) => tsLinks(line, one)).join('\n'), where: null };
   const linkify = (body) => {
     let lesson = null, seenLink = false;
     return body.split('\n').map((line) => {
-      if (/^## \S+ /.test(line)) { lesson = null; seenLink = false; return line; }
+      if (/^## \S+/.test(line)) { lesson = null; seenLink = false; return line; }
       if (!seenLink && /https:\/\//.test(line)) {
         seenLink = true;
-        const m = /(?<![0-9a-f])([0-9a-f]{32}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?![0-9a-f])/.exec(line);
+        const m = NOTION_ID_RE.exec(line);
         const x = m && ci.lessonById.get(m[1].replace(/-/g, ''));
         lesson = x ? x.lesson : null;
       }
-      if (!lesson) return line;
-      const id = encodeURIComponent(lesson.id);
-      return line.replace(/\[(\d{2}):(\d{2}):(\d{2})\]/g, (mm, a, b, c) =>
-        `<a class="ts-cite" href="#/lesson/${id}?t=${(+a) * 3600 + (+b) * 60 + (+c)}" title="${md.utils.escapeHtml(lessonName(lesson))}">${mm}</a>`);
+      return lesson ? tsLinks(line, lesson) : line;
     }).join('\n');
   };
-  return { linkify: (body) => linkify(body), where: null };
+  return { linkify, where: null };
 }
 // 文章頁上的逐字稿：給一個「講次頁」按鈕（課程索引已載入時）
 // 逐字稿路徑 → 講次（全站搜尋用：命中逐字稿就連到那一講的那一秒）
