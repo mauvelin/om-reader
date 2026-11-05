@@ -176,23 +176,33 @@ function setupMediaSession() {
   } catch (e) { /* 部分動作不支援時略過 */ }
 }
 
-// SW 說雲端硬碟回 401／403：記下位置，跳去登入，回來自動接回（在背景時等回到前景再跳）
+// SW 說雲端硬碟回 401／403：正在播才問要不要重新登入（在背景時等回到前景再問）；
+// 暫停中只在播放器上留一句與一顆按鈕，不跳確認框——播放器留在底部、App 退到背景再回來時，
+// iOS 會替暫停中的播放器重要資料，登入過期就跳框，看起來像別的功能（例如搜尋）要登入（本人 2026-11-05 回報）
 function playerUnauthorized() {
   if (!PLAYER) return;
+  const el = playerEl();
+  if (!el || el.paused || el.ended) { playerLoginNote(); return; }
   if (document.visibilityState === 'visible' && KEY) playerRelogin();
   else PLAYER.wantLogin = true;
 }
-function playerRelogin() {
+function playerLoginArgs() {
   const el = playerEl();
-  PLAYER.wantLogin = false;
   const t = el && el.readyState >= 1 && el.currentTime > 0 ? el.currentTime : PLAYER.lastT;
-  const args = { returnHash: location.hash, resume: { file: PLAYER.file, t, mode: PLAYER.mode, meta: PLAYER.meta } };
-  gLoginAsk('Google 登入失效了，雲端硬碟的影音要重新登入才能繼續播。', args).then((went) => {
-    if (went || !PLAYER) return;
-    if (el) el.pause();   // 選了不登入：停在這裡，播放器上留一顆按鈕，想登入時再按
-    const st = document.querySelector('.dock .status');
-    const again = h('button', { type: 'button', class: 'btn primary', onclick: () => gLogin(args).catch(() => {}) }, '登入 Google 繼續播');
-    if (st) { st.replaceChildren('Google 登入失效，停在這裡。', ' ', again); }
+  return { returnHash: location.hash, resume: { file: PLAYER.file, t, mode: PLAYER.mode, meta: PLAYER.meta } };
+}
+function playerLoginNote() {
+  const el = playerEl();
+  if (el) el.pause();
+  const args = playerLoginArgs();
+  const st = document.querySelector('.dock .status');
+  const again = h('button', { type: 'button', class: 'btn primary', onclick: () => gLogin(args).catch(() => {}) }, '登入 Google 繼續播');
+  if (st) st.replaceChildren('Google 登入已失效，停在這裡。', ' ', again);
+}
+function playerRelogin() {
+  PLAYER.wantLogin = false;
+  gLoginAsk('Google 登入失效了，雲端硬碟的影音要重新登入才能繼續播。', playerLoginArgs()).then((went) => {
+    if (!went && PLAYER) playerLoginNote();   // 選了不登入：停在這裡，想登入時再按
   }).catch(() => {});
 }
 document.addEventListener('visibilitychange', () => {

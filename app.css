@@ -594,3 +594,6 @@ mark.hit.cur { background: var(--accent); color: var(--bg); }
   font-size: 12px; font-weight: var(--fw-strong); line-height: 1.6; color: var(--muted); vertical-align: 2px; white-space: nowrap; }
 .doc-nav.doc-nav-course { display: flex; justify-content: flex-start; flex-wrap: wrap; }
 .doc-nav.doc-nav-course > * { justify-self: auto; }
+/* 講次頁的頁內搜尋列：上方已釘著播放區與頁籤列，壓矮一點 */
+.lesson-right > .find-bar { margin: 0 0 var(--sp-2); }
+.lesson-right > .find-bar .find-ic { min-height: 36px; }

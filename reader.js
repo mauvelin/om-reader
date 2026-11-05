@@ -731,11 +731,15 @@ function markHits(root, terms) {
   }
   return marks;
 }
-// 頁內搜尋列：「詞」第幾處／共幾處、上一處、下一處、關閉；黏在頂列下方
-function findBar(body, q) {
+// 頁內搜尋列：「詞」第幾處／共幾處、上一處、下一處、關閉；黏在頂列下方。
+// opts.top：黏住的位置（講次頁要算上釘住的播放區與頁籤列）；opts.from：從這個元素（含）之後的第一處開始
+function findBar(body, q, opts = {}) {
   const marks = markHits(body, q.trim().split(/\s+/));
   if (!marks.length) return;
+  const topPx = opts.top || (() => { const b = document.querySelector('.bar'); return b ? b.getBoundingClientRect().height : 0; });
   let cur = 0;
+  let first = 0;
+  if (opts.from) { const k = marks.findIndex((m) => opts.from.contains(m) || (opts.from.compareDocumentPosition(m) & Node.DOCUMENT_POSITION_FOLLOWING)); if (k >= 0) first = k; }
   const count = h('span', { class: 'find-n', role: 'status' });
   const bar = h('div', { class: 'find-bar' }, h('span', { class: 'find-q' }, `「${q.trim()}」`), count);
   const go = (i) => {
@@ -745,9 +749,12 @@ function findBar(body, q) {
     m.classList.add('cur');
     for (let p = m.parentElement; p; p = p.parentElement) if (p.tagName === 'DETAILS' && !p.open) p.open = true;
     count.textContent = `${cur + 1}／${marks.length}`;
-    const top = document.querySelector('.bar');
-    const off = (top ? top.getBoundingClientRect().height : 0) + bar.getBoundingClientRect().height;
-    window.scrollTo({ top: Math.max(0, m.getBoundingClientRect().top + window.scrollY - off - window.innerHeight * 0.25) });
+    bar.style.top = topPx() + 'px';
+    const off = topPx() + bar.getBoundingClientRect().height;
+    const tabs = document.querySelector('.tabs');   // 看得到的下緣＝底部分頁列上緣
+    const bottom = tabs ? tabs.getBoundingClientRect().top : window.innerHeight;
+    const r = m.getBoundingClientRect();
+    window.scrollTo({ top: Math.max(0, r.top + window.scrollY - off - Math.max(0, (bottom - off - r.height) / 3)) });
   };
   bar.append(
     h('button', { type: 'button', class: 'btn find-ic up', 'aria-label': '上一處', onclick: () => go(cur - 1) }, svgIcon('down')),
@@ -756,9 +763,15 @@ function findBar(body, q) {
       marks.forEach((m) => m.replaceWith(m.textContent)); bar.remove();
     } }, svgIcon('close')));
   body.before(bar);
-  const top = document.querySelector('.bar');
-  bar.style.top = (top ? top.getBoundingClientRect().height : 0) + 'px';
-  requestAnimationFrame(() => go(0));
+  // 黏住的位置隨版面重算：講次頁的播放區載入影片後會長高，只算一次會蓋在影片上
+  const place = () => { bar.style.top = topPx() + 'px'; };
+  place();
+  let queued = false;
+  const later = () => { if (queued) return; queued = true; requestAnimationFrame(() => { queued = false; if (bar.isConnected) place(); }); };
+  window.addEventListener('scroll', later, { passive: true, signal: viewAbort.signal });
+  window.addEventListener('resize', later, { signal: viewAbort.signal });
+  requestAnimationFrame(() => go(first));
+  return bar;
 }
 // 非本人陳述的段落標示（SCHEMA 既有定義，字樣在資料包 catalog.ui.section_labels）
 function labelSections(root, d) {

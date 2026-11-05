@@ -412,6 +412,7 @@ async function viewLesson(id, qs) {
   const key = l.media && l.media.key;
   const meta = key ? { key, lessonId: l.id, courseId: c.id, course: c.title, title: `${l.order ? l.order + ' ' : ''}${l.lesson_title || l.title}`, href: '#/lesson/' + encodeURIComponent(l.id) } : null;
   const startT = Number(new URLSearchParams(qs || '').get('t')) || 0;
+  const findQ = new URLSearchParams(qs || '').get('q') || '';   // 從搜尋進來：標出搜尋的詞
   const prog = lessonProgress(l);
   const isAudio = l.media && l.media.kind && l.media.kind !== 'mp4';
   const sig = viewAbort.signal;
@@ -732,6 +733,8 @@ async function viewLesson(id, qs) {
   }, true);
   const show = async (k) => {
     endPick();
+    const fb = document.querySelector('.lesson-right > .find-bar');   // 換分頁：上一頁的標示跟著拿掉
+    if (fb) fb.remove();
     setQs('tab', k === 'transcript' ? null : k);
     pane.replaceChildren(await panes[k]());
     wireSeek(pane);
@@ -823,6 +826,7 @@ async function viewLesson(id, qs) {
     for (const n of segs) { if (Number(n.dataset.t) <= startT) target = n; else break; }
     if (target) { target.classList.add('flash'); requestAnimationFrame(() => scrollToSeg(target)); }
   }
+  if (findQ && typeof findBar === 'function') findBar(pane, findQ, { top: visTop, from: startT ? [...pane.querySelectorAll('.seg[data-t]')].filter((n) => Number(n.dataset.t) <= startT).pop() : null });
 
   // 播放畫面：這一講的播放器已經在跑（例如從底部小播放器點回來）就借進來；之後才開的，開好會自己借進來
   PLAYER_SLOT = key ? { name: key, alt: altKeys, el: slot } : null;
@@ -982,7 +986,8 @@ function courseSearchBox(only) {
     if (!total) { out.replaceChildren(h('p', { class: 'muted' }, `找不到「${q}」。`)); return; }
     out.replaceChildren(h('p', { class: 'muted' }, total > hits.length ? `共 ${total} 處，列出前 ${hits.length} 處（摘要在前、筆記保留名額）。` : `共 ${total} 處。`),
       listOf(hits.map((x) => {
-        const href = x.l ? `#/lesson/${x.l.id}?t=${x.t || 0}${x.kind === '摘要' ? '&tab=summary' : ''}` : pageHref(x.d.p);
+        const qq = encodeURIComponent(q);   // 點進去照樣標出搜尋的詞、捲到命中那一處（本人 2026-11-05）
+        const href = x.l ? `#/lesson/${x.l.id}?t=${x.t || 0}${x.kind === '摘要' ? '&tab=summary' : ''}&q=${qq}` : pageHref(x.d.p) + '?q=' + qq;
         const where = x.l ? `${x.l.order ? x.l.order + '　' : ''}${x.l.lesson_title || x.l.title}` : docTitle(x.d);
         return h('li', null, h('a', { class: 'item', href }, h('span', { class: 't' }, where),
           h('span', { class: 'm' }, [x.kind, x.t != null ? clock(x.t) : null, only ? null : x.c.title].filter(Boolean).join('・')), markTerms(x.text, terms)));
@@ -1112,7 +1117,7 @@ function transcriptHits(text, terms, lesson) {
 }
 function lessonHitLink(x, hit, terms) {
   const l = x.lesson;
-  return h('li', null, areaColor(h('a', { class: 'item', href: `#/lesson/${encodeURIComponent(l.id)}?t=${hit.t}` },
+  return h('li', null, areaColor(h('a', { class: 'item', href: `#/lesson/${encodeURIComponent(l.id)}?t=${hit.t}&q=${encodeURIComponent(terms.join(' '))}` },
     h('span', { class: 't' }, `${l.order ? l.order + '　' : ''}${l.lesson_title || l.title}`, h('span', { class: 'kind-tag' }, '講次')),
     h('span', { class: 'm' }, `${x.course.title}・${clock(hit.t)}${hit.n > 1 ? `・這一講共 ${hit.n} 處` : ''}`),
     markTerms(hit.text, terms.map((t) => t.toLowerCase()))), null, x.course.category));
