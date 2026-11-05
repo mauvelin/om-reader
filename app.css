@@ -603,3 +603,9 @@ mark.hit.cur { background: var(--accent); color: var(--bg); }
 .find-bar .find-input:focus { outline: none; border-bottom-color: var(--accent); }
 .btn.find-open { min-width: var(--hit); padding: 0 10px; }
 .seg-tabs .btn.find-open { flex: none; background: transparent; border-color: transparent; }
+/* 要登入 Google 時的提示框（App 自己畫，不用 confirm()；方角卡片、按鈕圓角） */
+.login-sheet { position: fixed; inset: 0; z-index: 60; display: flex; align-items: flex-end; justify-content: center; background: #0006;
+  padding: var(--sp-3) max(var(--sp-3), env(safe-area-inset-right)) calc(var(--sp-3) + env(safe-area-inset-bottom)) max(var(--sp-3), env(safe-area-inset-left)); }
+.login-sheet .card { width: 100%; max-width: 520px; margin: 0; box-shadow: var(--shadow-card); }
+.login-sheet .login-why { font-weight: var(--fw-strong); margin: 0 0 var(--sp-2); }
+.login-sheet .status:empty { display: none; }

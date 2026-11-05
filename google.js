@@ -45,11 +45,32 @@ async function gLogin({ returnHash, resume, silent } = {}) {
 }
 
 // 不是本人按「登入 Google」、而是用到要登入的功能時：先問一次再跳。Google 的登入頁不在 App 裡，
-// 跳過去就沒有按鈕可以回來（本人 2026-11-04）。回傳 true＝跳過去了；false＝本人選了留在原畫面
-async function gLoginAsk(why, args) {
-  if (!confirm(`${why}\n\n按「好」會跳到 Google 的登入頁，登入完自動回到這裡；按「取消」留在原畫面。`)) return false;
-  await gLogin(args);
-  return true;
+// 跳過去就沒有按鈕可以回來（本人 2026-11-04）。回傳 true＝跳過去了；false＝本人選了留在原畫面。
+// 用 App 自己的提示框，不用瀏覽器的 confirm()：iOS 主畫面 App 只放行「本人剛按下按鈕」觸發的跳轉，
+// 按 confirm 的「好」之後再跳會被默默擋下（本人 2026-11-05 回報：按了好卻沒跳到登入頁）
+function gLoginAsk(why, args) {
+  const old = document.querySelector('.login-sheet');
+  if (old) old.remove();
+  return new Promise((resolve) => {
+    const msg = h('p', { class: 'status', role: 'status' });
+    const close = (v) => { sheet.remove(); document.removeEventListener('keydown', esc); resolve(v); };
+    const esc = (e) => { if (e.key === 'Escape') close(false); };
+    const go = h('button', { type: 'button', class: 'btn primary' }, '登入 Google');
+    go.addEventListener('click', () => {   // 在按鈕的點擊裡直接開始跳轉
+      go.disabled = true;
+      gLogin(args).then(() => resolve(true)).catch((e) => { go.disabled = false; msg.textContent = e.message; });
+    });
+    const sheet = h('div', { class: 'login-sheet', role: 'dialog', 'aria-modal': 'true', 'aria-label': '要登入 Google' },
+      h('div', { class: 'card' },
+        h('p', { class: 'login-why' }, why),
+        h('p', { class: 'muted' }, '會跳到 Google 的登入頁，登入完自動回到這裡；選「先不要」就留在原畫面。'),
+        msg,
+        h('div', { class: 'row' }, go, h('button', { type: 'button', class: 'btn', onclick: () => close(false) }, '先不要'))));
+    sheet.addEventListener('click', (e) => { if (e.target === sheet) close(false); });
+    document.addEventListener('keydown', esc);
+    document.body.append(sheet);
+    go.focus();
+  });
 }
 
 // 啟動時、路由之前呼叫：網址 # 後面若是 Google 帶回來的結果，取下、核對 state、立刻從網址清掉
