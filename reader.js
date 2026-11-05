@@ -666,6 +666,16 @@ async function viewPage(path, q) {
     }
   }
   const kids = [head, chips, actions];   // 按鈕列：沒有按鈕時 CSS 收起（下面會補「來源／被引用」的跳轉鈕）
+  // wiki 頁有講次時間點、App 卻還沒讀到 learn 匯出檔（重裝 App 後沒登入過 Google）：說明時間點為什麼不能點（本人 2026-11-05）
+  if (!cites && d.p.startsWith('vault/wiki/') && typeof LEXPORT !== 'undefined' && !LEXPORT && d.s != null && /\[\d{2}:\d{2}:\d{2}\]/.test((await docText(d)) || '')) {
+    const gs = typeof gSettings === 'function' ? await gSettings() : { enabled: false };
+    const hint = h('p', { class: 'note export-hint' });
+    if (!gs.enabled) hint.append('這一頁的講次時間點還不能點：到「同步」頁啟用雲端硬碟功能並登入 Google 一次，讀到 learn 的匯出檔之後就能點、跳到講次頁的那一秒。');
+    else if (!gHasToken()) hint.append('這一頁的講次時間點還不能點：登入 Google 一次，讀到 learn 的匯出檔之後就能點、跳到講次頁的那一秒（讀過一次就存在這支手機，之後不用登入）。 ',
+      h('button', { type: 'button', class: 'btn', onclick: () => gLogin({ returnHash: location.hash }).catch((e) => { hint.textContent = e.message; }) }, '登入 Google'));
+    else hint.append('這一頁的講次時間點還不能點：雲端硬碟「OM App」裡找不到 learn 的匯出檔（learn-export.json）。電腦上的 learn 跑過匯出之後，回到這一頁就能點。');
+    kids.push(hint);
+  }
   if (cites) kids.push(cites.where);   // 出現在的講次
   const nav = docNav(d);
   if (nav) kids.push(nav);
