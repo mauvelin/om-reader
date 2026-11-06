@@ -491,37 +491,76 @@ async function viewHistory(qs) {
 }
 
 const isAux = (d) => /^_/.test(basename(d.p)) || basename(d.p) === 'index.md' || /\.(json|jsonl)$/.test(d.p);
-// 分類裡的 self/resources：照 repo 原本的課程資料夾分組（本人 2026-11-04：分類＝原本的資料夾；
-// 照學習方式看的課程清單在「課程」分頁）。每個資料夾收合，展開才畫清單；逐字稿、講義帶種類標籤
-function viewLaneFolders(cat, lane) {
-  const base = 'vault/' + lane + '/';
-  const groups = new Map();
-  const root = [];
-  for (const d of cat.docs) {
-    if (d.l !== lane || !(d.s != null || /\.(pdf|html?|mp4)$/i.test(d.p)) || !d.p.startsWith(base)) continue;
-    const rest = d.p.slice(base.length);
-    const k = rest.indexOf('/');
-    if (k < 0) { root.push(d); continue; }
-    const f = rest.slice(0, k);
-    if (!groups.has(f)) groups.set(f, []);
-    groups.get(f).push(d);
+// 分類裡有子資料夾的區塊：照 repo 原本的資料夾樹呈現（本人 2026-11-04 self/resources、2026-11-06 推到全部區塊）。
+// 每個資料夾收合、標出共幾則，展開才畫；上方篩選框即時篩標題與檔名（符合的照資料夾分組列出）、全部展開／收合。
+// 日記照舊用年份篩選（它的子資料夾就是年份）
+const laneBase = (lane) => (CAT.docs.some((d) => d.l === lane && d.p.startsWith('vault/' + lane + '/')) ? 'vault/' + lane + '/' : lane + '/');
+const readable = (d) => d.s != null || /\.(pdf|html?|mp4)$/i.test(d.p);
+function laneHasFolders(cat, lane) {
+  const base = laneBase(lane);
+  return cat.docs.some((d) => d.l === lane && readable(d) && d.p.startsWith(base) && d.p.slice(base.length).includes('/'));
+}
+function viewLaneTree(cat, lane) {
+  const base = laneBase(lane);
+  const cmpDoc = (a, b) => docTitle(a).localeCompare(docTitle(b), 'zh-Hant', { numeric: true });
+  const cmpName = (a, b) => (a.startsWith('_') - b.startsWith('_')) || a.localeCompare(b, 'zh-Hant', { numeric: true });
+  const root = { name: '', files: [], dirs: new Map(), n: 0 };
+  const docs = cat.docs.filter((d) => d.l === lane && readable(d) && d.p.startsWith(base));
+  for (const d of docs) {
+    const parts = d.p.slice(base.length).split('/');
+    let node = root;
+    node.n++;
+    for (const part of parts.slice(0, -1)) {
+      if (!node.dirs.has(part)) node.dirs.set(part, { name: part, files: [], dirs: new Map(), n: 0 });
+      node = node.dirs.get(part);
+      node.n++;
+    }
+    node.files.push(d);
   }
-  const cmp = (a, b) => docTitle(a).localeCompare(docTitle(b), 'zh-Hant', { numeric: true });
-  const names = [...groups.keys()].sort((a, b) => (a.startsWith('_') - b.startsWith('_')) || a.localeCompare(b, 'zh-Hant'));
-  const n = [...groups.values()].reduce((x, xs) => x + xs.length, 0) + root.length;
-  const kids = [h('div', { class: 'doc-head' }, h('h1', null, laneName(lane))),
-    h('p', { class: 'page-sub' }, `${names.length} 個資料夾・${n.toLocaleString()} 則`),
-    h('div', { class: 'row' }, h('a', { class: 'btn', href: '#/courses' }, svgIcon('course'), '改用課程方式看'))];
-  for (const f of names) {
-    const xs = groups.get(f).sort(cmp);
-    const det = h('details', { class: 'aux folder' }, h('summary', null, `${f}（${xs.length}）`));
-    det.addEventListener('toggle', () => { if (det.open && det.childNodes.length === 1) det.append(listOf(xs.map((d) => itemLink(d)))); });
-    kids.push(det);
-  }
-  const loose = root.filter((d) => !isAux(d));
-  if (loose.length) kids.push(secTitle('資料夾外'), listOf(loose.sort(cmp).map((d) => itemLink(d))));
-  kids.push(h('p', { class: 'muted more' }, h('a', { href: '#/l/' + enc(lane) + '?all=1' }, '改看全部檔案清單（不分資料夾）')));
-  setView(...kids);
+  const folderEl = (node) => {
+    const det = h('details', { class: 'folder' }, h('summary', null, h('span', { class: 'folder-name' }, node.name), h('span', { class: 'folder-n' }, `${node.n.toLocaleString()} 則`)));
+    det._fill = () => { if (det.childNodes.length === 1) det.append(nodeBody(node)); };   // 展開才畫下一層
+    det.addEventListener('toggle', () => { if (det.open) det._fill(); });
+    return det;
+  };
+  const nodeBody = (node) => {
+    const box = h('div', { class: 'folder-body' });   // 資料夾在前、檔案在後（同檔案總管）
+    for (const k of [...node.dirs.keys()].sort(cmpName)) box.append(folderEl(node.dirs.get(k)));
+    if (node.files.length) box.append(listOf(node.files.slice().sort(cmpDoc).map((d) => itemLink(d))));
+    return box;
+  };
+  const topFolders = [...root.dirs.keys()].sort(cmpName).map((k) => folderEl(root.dirs.get(k)));
+  const tree = h('div', { class: 'folder-tree' });
+  const showTree = () => {
+    tree.replaceChildren(...topFolders, ...(root.files.length ? [secTitle(`這一層的檔案（${root.files.length}）`), listOf(root.files.slice().sort(cmpDoc).map((d) => itemLink(d)))] : []));
+  };
+  showTree();
+  // 篩選：每個詞都要出現在標題或檔名；結果依所在資料夾分組
+  const q = h('input', { type: 'search', class: 'csearch', enterkeyhint: 'search', placeholder: `篩選 ${laneName(lane)} 的標題與檔名`, 'aria-label': '篩選這個區塊' });
+  let typing;
+  q.addEventListener('input', () => { clearTimeout(typing); typing = setTimeout(() => {
+    const terms = q.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    if (!terms.length) { showTree(); return; }
+    const hit = docs.filter((d) => { const x = (docTitle(d) + ' ' + d.p.slice(base.length)).toLowerCase(); return terms.every((t) => x.includes(t)); });
+    const byDir = new Map();
+    for (const d of hit.sort(cmpDoc)) { const rel = d.p.slice(base.length); const dir = rel.includes('/') ? rel.slice(0, rel.lastIndexOf('/')) : '（這一層）'; if (!byDir.has(dir)) byDir.set(dir, []); byDir.get(dir).push(d); }
+    tree.replaceChildren(h('p', { class: 'muted' }, hit.length ? `符合 ${hit.length} 則` : '沒有符合的檔。'),
+      ...[...byDir.keys()].sort(cmpName).flatMap((dir) => [secTitle(dir.split('/').join(' ／ ')), listOf(byDir.get(dir).map((d) => itemLink(d)))]));
+  }, 150); });
+  const openAll = (v) => {
+    if (q.value) { q.value = ''; showTree(); }
+    if (!v) { tree.querySelectorAll('details.folder[open]').forEach((d) => { d.open = false; }); return; }
+    const deep = (d) => { d._fill(); d.open = true; d.querySelectorAll(':scope > .folder-body > details.folder').forEach(deep); };   // 當場畫出下一層再往下開
+    tree.querySelectorAll(':scope > details.folder').forEach(deep);
+  };
+  const tools = h('div', { class: 'row folder-tools' },
+    h('button', { type: 'button', class: 'btn', onclick: () => openAll(true) }, '全部展開'),
+    h('button', { type: 'button', class: 'btn', onclick: () => openAll(false) }, '全部收合'),
+    lane === 'self/resources' ? h('a', { class: 'btn', href: '#/courses' }, svgIcon('course'), '改用課程方式看') : null);
+  setView(h('div', { class: 'doc-head' }, h('h1', null, laneName(lane))),
+    h('p', { class: 'page-sub' }, `${root.dirs.size} 個資料夾・${docs.length.toLocaleString()} 則`),
+    q, tools, tree,
+    h('p', { class: 'muted more' }, h('a', { href: '#/l/' + enc(lane) + '?all=1' }, '改看全部檔案清單（不分資料夾）')));
 }
 async function viewLane(arg) {
   const [lane, qs] = arg.split('?');
@@ -529,7 +568,7 @@ async function viewLane(arg) {
   const cat = await catalog();
   if (!cat) return emptyState();
   const ui = cat.ui || {};
-  if (lane === 'self/resources' && !params.has('all')) return viewLaneFolders(cat, lane);
+  if (!params.has('all') && lane !== ui.journal_lane && laneHasFolders(cat, lane)) return viewLaneTree(cat, lane);
   const all = cat.docs.filter((d) => d.l === lane && (d.s != null || /\.(pdf|html?|mp4)$/i.test(d.p)));
   let docs = all.filter((d) => !isAux(d));
   const aux = all.filter(isAux);
@@ -965,7 +1004,55 @@ async function searchCoursesPractice(tl) {
   }
   return out;
 }
+// 網址清理（本人 2026-11-06：要即時，App 內建）：頂端搜尋框貼網址就走這裡，不搜內容。
+// Threads 的 xmt＝誰分享的（slof 也是分享參數），貼文網址本身不需要任何參數，所以 Threads 一律拿掉全部查詢參數；
+// 其他常見平台只拿掉已知的追蹤參數。threads.com/share/<代碼>/ 的追蹤資訊就是網址本身，要打開一次才知道指向哪篇——
+// 瀏覽器裡的 App 跟不了這個轉址，只能說明怎麼處理
+const TRACK_PARAMS = /^(utm_\w+|fbclid|gclid|dclid|msclkid|mc_eid|mc_cid|igsh|igshid|si|xmt|slof|ref_src|ref_url)$/i;
+const X_TRACK = /^(s|t)$/;   // X（Twitter）分享時加的 s、t；別的網站的 t 可能是時間，不動
+function cleanUrl(raw) {
+  let u;
+  try { u = new URL(raw.trim()); } catch (e) { return null; }
+  const host = u.hostname.replace(/^www\./, '');
+  const out = { host, removed: [], share: false };
+  if (/^threads\.(com|net)$/.test(host)) {
+    if (/^\/share\//.test(u.pathname)) out.share = true;
+    for (const k of [...u.searchParams.keys()]) out.removed.push(k);
+    u.search = '';
+  } else {
+    const isX = /^(x|twitter)\.com$/.test(host);
+    for (const k of [...u.searchParams.keys()]) {
+      if (TRACK_PARAMS.test(k) || (isX && X_TRACK.test(k))) { out.removed.push(k); u.searchParams.delete(k); }
+    }
+  }
+  u.hash = u.hash === '#' ? '' : u.hash;
+  out.url = u.toString();
+  return out;
+}
+function viewCleanUrl(raw) {
+  const r = cleanUrl(raw);
+  if (!r) return setView(h('h1', null, '網址清理'), h('p', { class: 'empty-box' }, '這看起來不是完整的網址。'));
+  const status = h('p', { class: 'status', role: 'status' });
+  const kids = [h('h1', null, '網址清理'), h('p', { class: 'page-sub' }, r.host)];
+  if (r.share) {
+    kids.push(h('div', { class: 'note' }, h('p', null, '這是 Threads 的分享代碼網址（threads.com/share/…）：分享者的資訊就藏在網址本身，App 沒辦法在不打開它的情況下還原成貼文網址。'),
+      h('p', null, '做法：在 Safari 打開這個網址，等它跳到貼文（網址變成 …/@帳號/post/…），複製網址列，回來再貼一次，就會清掉 xmt。')));
+  }
+  if (r.share) {   // 分享代碼網址本身就是追蹤：不給「複製」，只給打開
+    kids.push(h('div', { class: 'row' }, h('a', { class: 'btn primary', href: r.url, target: '_blank', rel: 'noopener noreferrer' }, svgIcon('external'), '在 Safari 打開')));
+    return setView(...kids);
+  }
+  const box = h('div', { class: 'card clean-url' }, h('p', { class: 'clean-out' }, r.url),
+    h('p', { class: 'muted' }, r.removed.length ? `已拿掉：${r.removed.join('、')}${r.removed.includes('xmt') ? '（xmt＝誰分享的）' : ''}` : '沒有要拿掉的追蹤參數。'),
+    h('div', { class: 'row' },
+      h('button', { type: 'button', class: 'btn primary', onclick: async () => { status.textContent = (await copyText(r.url)) ? '已複製乾淨的網址。' : '自動複製失敗，請長按上面的網址複製。'; } }, '複製'),
+      h('a', { class: 'btn', href: r.url, target: '_blank', rel: 'noopener noreferrer' }, svgIcon('external'), '打開')), status);
+  kids.push(box, h('p', { class: 'muted' }, '在頂端搜尋框貼上任何網址按搜尋，就會到這裡；Threads 會拿掉全部參數，其他網站只拿掉已知的追蹤參數。'));
+  setView(...kids);
+  if (r.removed.length && !r.share) copyText(r.url).then((ok) => { if (ok) status.textContent = '已自動複製乾淨的網址。'; });
+}
 async function viewSearch(q) {
+  if (/^\s*https?:\/\//i.test(q)) return viewCleanUrl(q);   // 貼的是網址：清理，不搜尋
   $('#q').value = q;
   const cat = await catalog();
   if (!cat) return emptyState();

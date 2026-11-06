@@ -611,3 +611,19 @@ mark.hit.cur { background: var(--accent); color: var(--bg); }
 .login-sheet .status:empty { display: none; }
 /* 用戶端 ID 的密碼管理帳號欄：給 iOS 認得「帳號＋密碼」一組，畫面上只留一行小字 */
 .keychain-form .keychain-user { width: 100%; border: 0; background: transparent; padding: 0; min-height: 0; color: var(--muted); font-size: 12px; }
+/* 分類的資料夾樹（方角）：每層一列，名稱＋則數＋展開箭頭；子層往右縮一格 */
+.folder-tree { margin-top: var(--sp-3); }
+.folder-tools { margin: var(--sp-2) 0 0; }
+details.folder { border: 1px solid var(--line); background: var(--card); margin: 0 0 -1px; }
+details.folder > summary { list-style: none; display: flex; align-items: center; gap: var(--sp-2); min-height: var(--hit); padding: var(--sp-2) var(--sp-3); cursor: pointer; }
+details.folder > summary::-webkit-details-marker { display: none; }
+details.folder > summary::before { content: ""; width: 7px; height: 7px; flex: none; border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted); transform: rotate(-45deg); transition: transform var(--t-fast); }
+details.folder[open] > summary::before { transform: rotate(45deg); }
+details.folder .folder-name { flex: 1; min-width: 0; font-weight: var(--fw-strong); overflow-wrap: anywhere; }
+details.folder .folder-n { color: var(--muted); font-size: var(--fs-chip); font-variant-numeric: tabular-nums; white-space: nowrap; }
+details.folder[open] > summary { border-bottom: 1px solid var(--line); }
+.folder-body { padding: 0 0 0 var(--sp-3); }
+.folder-body > .list { margin: 0; }
+.folder-body > details.folder { border-right: 0; }
+/* 網址清理結果 */
+.clean-url .clean-out { font-family: ui-monospace, Menlo, monospace; font-size: 15px; overflow-wrap: anywhere; user-select: all; -webkit-user-select: all; margin: 0 0 var(--sp-2); }
