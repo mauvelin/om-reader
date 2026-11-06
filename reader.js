@@ -519,21 +519,29 @@ function viewLaneTree(cat, lane) {
     node.files.push(d);
   }
   const folderEl = (node) => {
-    const det = h('details', { class: 'folder' }, h('summary', null, h('span', { class: 'folder-name' }, node.name), h('span', { class: 'folder-n' }, `${node.n.toLocaleString()} 則`)));
+    const ic = svgIcon('folder'); ic.classList.add('folder-ic');
+    const det = h('details', { class: 'folder' }, h('summary', null, ic, h('span', { class: 'folder-name' }, node.name), h('span', { class: 'folder-n' }, `${node.n.toLocaleString()} 則`)));
     det._fill = () => { if (det.childNodes.length === 1) det.append(nodeBody(node)); };   // 展開才畫下一層
     det.addEventListener('toggle', () => { if (det.open) det._fill(); });
     return det;
   };
+  // 樹裡的檔案列：每列底下的區塊名（就是這一頁的標題）重複，拿掉；剩下的日期、作者照留
+  const fileRow = (d) => {
+    const li = itemLink(d);
+    const m = li.querySelector('.m');
+    if (m) { const rest = m.textContent.replace(laneName(lane), '').trim(); if (rest) m.textContent = rest; else m.remove(); }
+    return li;
+  };
   const nodeBody = (node) => {
     const box = h('div', { class: 'folder-body' });   // 資料夾在前、檔案在後（同檔案總管）
     for (const k of [...node.dirs.keys()].sort(cmpName)) box.append(folderEl(node.dirs.get(k)));
-    if (node.files.length) box.append(listOf(node.files.slice().sort(cmpDoc).map((d) => itemLink(d))));
+    if (node.files.length) box.append(listOf(node.files.slice().sort(cmpDoc).map(fileRow)));
     return box;
   };
   const topFolders = [...root.dirs.keys()].sort(cmpName).map((k) => folderEl(root.dirs.get(k)));
   const tree = h('div', { class: 'folder-tree' });
   const showTree = () => {
-    tree.replaceChildren(...topFolders, ...(root.files.length ? [secTitle(`這一層的檔案（${root.files.length}）`), listOf(root.files.slice().sort(cmpDoc).map((d) => itemLink(d)))] : []));
+    tree.replaceChildren(...topFolders, ...(root.files.length ? [secTitle(`這一層的檔案（${root.files.length}）`), listOf(root.files.slice().sort(cmpDoc).map(fileRow))] : []));
   };
   showTree();
   // 篩選：每個詞都要出現在標題或檔名；結果依所在資料夾分組
@@ -546,7 +554,7 @@ function viewLaneTree(cat, lane) {
     const byDir = new Map();
     for (const d of hit.sort(cmpDoc)) { const rel = d.p.slice(base.length); const dir = rel.includes('/') ? rel.slice(0, rel.lastIndexOf('/')) : '（這一層）'; if (!byDir.has(dir)) byDir.set(dir, []); byDir.get(dir).push(d); }
     tree.replaceChildren(h('p', { class: 'muted' }, hit.length ? `符合 ${hit.length} 則` : '沒有符合的檔。'),
-      ...[...byDir.keys()].sort(cmpName).flatMap((dir) => [secTitle(dir.split('/').join(' ／ ')), listOf(byDir.get(dir).map((d) => itemLink(d)))]));
+      ...[...byDir.keys()].sort(cmpName).flatMap((dir) => [secTitle(dir.split('/').join(' ／ ')), listOf(byDir.get(dir).map(fileRow))]));
   }, 150); });
   const openAll = (v) => {
     if (q.value) { q.value = ''; showTree(); }
