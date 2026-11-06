@@ -371,6 +371,7 @@ async function viewHome() {
   const hist = (await getHistory()).map((x) => cat.byPath.get(x.p)).filter(Boolean).slice(0, 3);
   if (hist.length) kids.push(secTitle('繼續看', '#/history', '全部看過'), listOf(hist.map((d) => itemLink(d, null, { resume: true }))));
   if (typeof continueSection === 'function') kids.push(...await continueSection().catch(() => []));
+  if (typeof videosHomeSection === 'function') kids.push(...await videosHomeSection().catch(() => []));   // 最近的影片（videos.js）
   // 領域地圖：讀 catalog.ui.home_map 指定的頁面裡「### 名稱 → [[頁面]] 說明」的行
   const idx = ui.home_map ? cat.byPath.get(ui.home_map) : null;
   if (idx) {

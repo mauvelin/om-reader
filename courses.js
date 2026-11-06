@@ -139,6 +139,7 @@ function progressSave(meta, el) {
   if (!LREC) { lrec().then(() => progressSave(meta, el)).catch(() => {}); return; }
   if (el.readyState < 1 || !Number.isFinite(el.currentTime)) return;
   if (meta.kind === 'practice') return practiceProgressSave(meta, el);   // 練習影片：practice.js
+  if (meta.kind === 'video') return videoProgressSave(meta, el);   // 影片（Wait for Video）：videos.js，只存這支手機
   const dur = Number.isFinite(el.duration) ? el.duration : 0;
   const prev = LREC.progress[meta.key] || {};
   const now = new Date().toISOString();
@@ -197,6 +198,9 @@ async function viewCourses(cat, lane) {
   const total = ci.list.reduce((n, c) => n + c.lessons.length, 0);
   const kids = [h('div', { class: 'doc-head' }, h('h1', null, '課程')),
     h('p', { class: 'page-sub' }, `${laneLabel(lane) ? laneLabel(lane) + '・' : ''}${ci.list.length} 門課・${total} 講・依課程`), courseSearchBox(null)];
+  // 影片（Wait for Video 存下來的）：和課程分開，入口放在這裡（本人 2026-11-06）
+  const vids = typeof videosCached === 'function' ? await videosCached().catch(() => null) : null;
+  kids.push(h('div', { class: 'row' }, h('a', { class: 'btn', href: '#/videos' }, svgIcon('video'), vids && vids.items.length ? `影片（${vids.items.length}）` : '影片')));
   if (nNotesOnly) {
     const box = h('input', { type: 'checkbox', id: 'notes-only' });
     box.checked = showNotesOnly;

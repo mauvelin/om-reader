@@ -384,8 +384,8 @@ async function offSection() {
     const state = e.state === 'done' ? fmtSize(e.size) : `${e.state === 'paused' ? '暫停' : '下載中'} ${offPct(e)}%（${fmtSize(e.size)}）${e.err ? `・${e.err}` : ''}`;
     const del = h('button', { type: 'button', class: 'btn quiet', onclick: async () => { await offRemove(key); route(); } }, '刪除');
     const resume = e.state === 'paused' ? h('button', { type: 'button', class: 'btn', onclick: async () => { if (!gHasToken()) { out.textContent = '要先登入 Google 才能下載。'; return; } await offEnqueue({ key }); route(); } }, '繼續下載') : null;
-    const href = e.kind === 'practice' ? '#/practice/item/' + encodeURIComponent(e.ref) : '#/lesson/' + encodeURIComponent(e.ref);
-    return h('li', { class: 'choice' }, h('a', { href }, h('span', { class: 't' }, e.title), h('span', { class: 'm' }, `${e.kind === 'practice' ? '練習' : '講次'}・${offIsVideo(e) ? '影片' : '聲音'}・${state}${seen.has(key) ? '・已看完' : ''}`)), h('div', { class: 'row' }, resume, del));
+    const href = e.kind === 'practice' ? '#/practice/item/' + encodeURIComponent(e.ref) : e.kind === 'video' ? '#/video/' + encodeURIComponent(e.ref) : '#/lesson/' + encodeURIComponent(e.ref);
+    return h('li', { class: 'choice' }, h('a', { href }, h('span', { class: 't' }, e.title), h('span', { class: 'm' }, `${e.kind === 'practice' ? '練習・' : e.kind === 'video' ? '' : '講次・'}${offIsVideo(e) ? '影片' : '聲音'}・${state}${seen.has(key) ? '・已看完' : ''}`)), h('div', { class: 'row' }, resume, del));
   }) : []);
   const clear = rows.length ? h('button', { type: 'button', class: 'btn quiet danger', onclick: async () => {
     if (!confirm(`刪除這支手機上全部 ${rows.length} 個離線影音（${fmtSize(total)}）？`)) return;

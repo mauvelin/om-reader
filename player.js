@@ -55,7 +55,7 @@ async function playerOpen(file, { t = 0, mode, resumed = false, meta = null } = 
   // 講次名稱與四顆圖示同一行（本人 2026-11-04：少佔畫面高度）：回到這一講｜影片／聲音｜雲端硬碟｜關閉
   const ic = (tag, icon, label, extra) => h(tag, { class: 'btn quiet dock-ic', 'aria-label': label, title: label, ...extra }, svgIcon(icon));
   const modeBtn = ic('button', 'audio', '聲音模式（可在背景播）', { type: 'button' });
-  const back = meta && meta.kind === 'practice' ? '回到這一支' : '回到這一講';
+  const back = meta && meta.kind === 'practice' ? '回到這一支' : meta && meta.kind === 'video' ? '回到這支影片' : '回到這一講';
   const head = h('div', { class: 'dock-head' },
     backHref ? h('a', { class: 'dock-title', href: backHref }, title) : h('span', { class: 'dock-title' }, title),
     backHref ? ic('a', 'return', back, { href: backHref }) : null,
