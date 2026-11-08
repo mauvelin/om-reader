@@ -10,6 +10,7 @@ let COURSES = null;   // { list, byId, lessonById }
 let LREC = null;      // { progress: { media.key: {t_s, duration_s, completed, at} }, recent: { lesson_id: {course_id, at} } }
 let LEXPORT = null;    // learn-export.json（learn → App）：首頁分組、概念引用（規格：learn repo docs/om-app-contract.md §1）
 let lexportChecked = false;
+let LEXPORT_LOADING = false;   // 背景下載中（概念頁的提醒用）
 LOCK_HOOKS.push(() => { COURSES = null; LREC = null; LEXPORT = null; DOC_KIND = null; });
 function coursesReset() { COURSES = null; TERM_PAGES = null; DOC_KIND = null; }   // 同步完新資料時（core.js resetCaches）
 
@@ -24,8 +25,17 @@ async function learnExport() {
   }
   if (!lexportChecked && gHasToken() && navigator.onLine) {
     lexportChecked = true;
-    const check = learnExportRefresh();
-    if (!LEXPORT) { unlockStep('開啟頁面：讀 learn 匯出檔…'); await check; }
+    // 不讓頁面等它（本人 2026-11-08：iPad 登入 Google 回來後停在「開啟頁面」，關掉重開就好）：
+    // 手機上還沒有這份檔時，剛登入回來會先下載 3 MB 才畫頁面，和接回播放、同步紀錄擠在一起就卡住。
+    // 改成背景下載；第一次拿到時把目前這一頁重畫一次（補上概念連結、練習目錄）
+    const had = !!LEXPORT;
+    LEXPORT_LOADING = true;
+    learnExportRefresh().finally(() => { LEXPORT_LOADING = false; }).then(() => {
+      if (!had && LEXPORT && KEY && typeof route === 'function' && !document.querySelector('input:focus, textarea:focus')) {
+        curHash = null; viewCache.delete(location.hash);   // 返回快取會把舊畫面原樣還原：這一頁要真的重畫
+        route();
+      }
+    });
   }
   return LEXPORT ? LEXPORT.data : null;
 }

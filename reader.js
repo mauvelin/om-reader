@@ -721,6 +721,7 @@ async function viewPage(path, q) {
     if (!gs.enabled) hint.append('這一頁的講次時間點還不能點：到「同步」頁啟用雲端硬碟功能並登入 Google 一次，讀到 learn 的匯出檔之後就能點、跳到講次頁的那一秒。');
     else if (!gHasToken()) hint.append('這一頁的講次時間點還不能點：登入 Google 一次，讀到 learn 的匯出檔之後就能點、跳到講次頁的那一秒（讀過一次就存在這支手機，之後不用登入）。 ',
       h('button', { type: 'button', class: 'btn', onclick: () => gLogin({ returnHash: location.hash }).catch((e) => { hint.textContent = e.message; }) }, '登入 Google'));
+    else if (typeof LEXPORT_LOADING !== 'undefined' && LEXPORT_LOADING) hint.append('正在從雲端硬碟讀 learn 的匯出檔，讀完這一頁會自動更新，時間點就能點了。');
     else hint.append('這一頁的講次時間點還不能點：雲端硬碟「OM App」裡找不到 learn 的匯出檔（learn-export.json）。電腦上的 learn 跑過匯出之後，回到這一頁就能點。');
     kids.push(hint);
   }
