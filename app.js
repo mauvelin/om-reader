@@ -182,6 +182,7 @@ async function viewSettings() {
     ...(await googleSection()),
     ...((await gSettings()).enabled ? await recSection() : []),
     ...(((await gSettings()).enabled || Object.keys(await offIndex()).length) ? await offSection() : []),
+    ...(await resolverSection()),
     secTitle('這支手機'), h('div', { class: 'card' }, info, h('div', { class: 'row' }, lockBtn, clearBtn)));
   paintDataLine();
   fillInfo();

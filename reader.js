@@ -326,7 +326,7 @@ const CACHEABLE = /^#\/(p|l|s|c)\/|^#\/browse/;
 function stashView() {
   if (typeof playerRelease === 'function') playerRelease();
   if (curHash && curHash.startsWith('#/p/') && KEY) savePos(dec(curHash.slice(4).split('?')[0]), window.scrollY).catch(() => {});
-  if (curHash && CACHEABLE.test(curHash) && view.childNodes.length) {
+  if (curHash && CACHEABLE.test(curHash) && !/^#\/s\/https?%3A/i.test(curHash) && view.childNodes.length) {   // 網址清理的結果不留（設定改了要重算）
     viewCache.delete(curHash);
     viewCache.set(curHash, { nodes: [...view.childNodes], scroll: window.scrollY, urls: blobUrls });
     blobUrls = [];
@@ -1039,18 +1039,59 @@ function cleanUrl(raw) {
   out.url = u.toString();
   return out;
 }
-function viewCleanUrl(raw) {
-  const r = cleanUrl(raw);
+// threads.com/share/<代碼>/ 由 Threads 伺服器 302 轉到 @帳號/post/…?xmt=…；瀏覽器不讓網頁讀別站的轉址，
+// iPhone 上 Safari 打開又會被 Threads App 接走（本人 2026-11-16：照「Safari 打開再貼回」做不到）。
+// 所以交給本人自己 Google 帳號裡的 Apps Script（只接受 Threads 分享網址、回傳轉到的網址），分享代碼只經過本人的 Google 與 Threads
+const RESOLVER_SCRIPT = `// OM Reader：還原 Threads 分享網址（只接受 threads.com/share/…）
+function doGet(e) {
+  var u = (e && e.parameter && e.parameter.u) || '';
+  if (!/^https:\\/\\/(www\\.)?threads\\.(com|net)\\/share\\/[A-Za-z0-9_-]+\\/?$/.test(u)) return out({ error: '只接受 Threads 分享網址' });
+  for (var i = 0; i < 4; i++) {
+    var r = UrlFetchApp.fetch(u, { followRedirects: false, muteHttpExceptions: true });
+    var h = r.getHeaders();
+    var loc = h.Location || h.location;
+    if (!loc) return out({ error: 'Threads 沒有轉址（HTTP ' + r.getResponseCode() + '）' });
+    u = loc.indexOf('http') === 0 ? loc : 'https://www.threads.com' + loc;
+    if (!/\\/share\\//.test(u)) return out({ url: u });
+  }
+  return out({ error: '轉址太多次' });
+}
+function out(o) { return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON); }`;
+async function resolverUrl() {
+  const rec = await kvGet('resolver');
+  if (!rec || !KEY) return '';
+  try { return td.decode(await open_(rec)); } catch (e) { return ''; }
+}
+async function resolveShare(url) {
+  const base = await resolverUrl();
+  if (!base) { const e = new Error('還沒設定'); e.unset = true; throw e; }
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), 20000);
+  try {
+    const r = await fetch(base + (base.includes('?') ? '&' : '?') + 'u=' + encodeURIComponent(url), { signal: ctl.signal, credentials: 'omit', referrerPolicy: 'no-referrer' });
+    const j = await r.json();
+    if (!j.url) throw new Error(j.error || '沒有拿到網址');
+    return j.url;
+  } catch (e) { throw e.name === 'AbortError' ? new Error('轉換服務 20 秒沒有回應') : e; } finally { clearTimeout(timer); }
+}
+async function viewCleanUrl(raw) {
+  let r = cleanUrl(raw);
   if (!r) return setView(h('h1', null, '網址清理'), h('p', { class: 'empty-box' }, '這看起來不是完整的網址。'));
   const status = h('p', { class: 'status', role: 'status' });
   const kids = [h('h1', null, '網址清理'), h('p', { class: 'page-sub' }, r.host)];
-  if (r.share) {
-    kids.push(h('div', { class: 'note' }, h('p', null, '這是 Threads 的分享代碼網址（threads.com/share/…）：分享者的資訊就藏在網址本身，App 沒辦法在不打開它的情況下還原成貼文網址。'),
-      h('p', null, '做法：在 Safari 打開這個網址，等它跳到貼文（網址變成 …/@帳號/post/…），複製網址列，回來再貼一次，就會清掉 xmt。')));
-  }
-  if (r.share) {   // 分享代碼網址本身就是追蹤：不給「複製」，只給打開
-    kids.push(h('div', { class: 'row' }, h('a', { class: 'btn primary', href: r.url, target: '_blank', rel: 'noopener noreferrer' }, svgIcon('external'), '在 Safari 打開')));
-    return setView(...kids);
+  if (r.share) {   // 分享代碼網址：先還原成貼文網址，再照一般 Threads 網址清
+    setView(...kids, h('p', { class: 'muted' }, '還原 Threads 分享網址中…'));
+    try {
+      const real = await resolveShare(r.url);
+      const r2 = cleanUrl(real);
+      if (!r2 || r2.share) throw new Error('還原出來的網址不是貼文網址：' + real);
+      r = { ...r2, removed: ['分享代碼', ...r2.removed] };
+    } catch (e) {
+      kids.push(h('div', { class: 'note' }, h('p', null, 'threads.com/share/… 是分享代碼網址：分享者的資訊藏在網址本身，要先打開一次才知道是哪一篇貼文。'),
+        h('p', null, e.unset ? '還沒設定「分享網址轉換」：到「同步」頁的「網址清理」照步驟設定一次（約五分鐘），之後貼上就會自動還原。' : '還原失敗：' + (e.message || e))),
+        h('div', { class: 'row' }, h('a', { class: 'btn', href: '#/settings' }, '到同步頁設定')));
+      return setView(...kids);
+    }
   }
   const box = h('div', { class: 'card clean-url' }, h('p', { class: 'clean-out' }, r.url),
     h('p', { class: 'muted' }, r.removed.length ? `已拿掉：${r.removed.join('、')}${r.removed.includes('xmt') ? '（xmt＝誰分享的）' : ''}` : '沒有要拿掉的追蹤參數。'),
@@ -1059,7 +1100,42 @@ function viewCleanUrl(raw) {
       h('a', { class: 'btn', href: r.url, target: '_blank', rel: 'noopener noreferrer' }, svgIcon('external'), '打開')), status);
   kids.push(box, h('p', { class: 'muted' }, '在頂端搜尋框貼上任何網址按搜尋，就會到這裡；Threads 會拿掉全部參數，其他網站只拿掉已知的追蹤參數。'));
   setView(...kids);
-  if (r.removed.length && !r.share) copyText(r.url).then((ok) => { if (ok) status.textContent = '已自動複製乾淨的網址。'; });
+  if (r.removed.length) copyText(r.url).then((ok) => { if (ok) status.textContent = '已自動複製乾淨的網址。'; });
+}
+// 同步頁「網址清理」：分享網址轉換服務的設定與建立步驟
+async function resolverSection() {
+  const cur = await resolverUrl();
+  const out = h('p', { class: 'status', role: 'status' });
+  const input = h('input', { id: 'resolver-url', type: 'url', autocomplete: 'off', autocapitalize: 'off', spellcheck: 'false', placeholder: 'https://script.google.com/macros/s/…/exec' });
+  input.value = cur;
+  const save = h('button', { type: 'button', class: 'btn' }, '儲存');
+  save.addEventListener('click', async () => {
+    const v = input.value.trim();
+    if (v && !/^https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec$/.test(v)) { out.textContent = '網址應該長這樣：https://script.google.com/macros/s/…/exec'; return; }
+    await kvSet('resolver', v ? await seal(te.encode(v)) : null);
+    out.textContent = v ? '已儲存。試試看：在頂端搜尋框貼一個 threads.com/share/… 網址。' : '已清除。';
+  });
+  const test = h('button', { type: 'button', class: 'btn' }, '測試');
+  test.addEventListener('click', async () => {
+    out.textContent = '測試中…';
+    try { const u = await resolveShare('https://www.threads.com/share/BAOMwSwmDa/'); out.textContent = '可以用：' + (cleanUrl(u) || {}).url; }
+    catch (e) { out.textContent = e.unset ? '先貼上網址並儲存。' : '測試失敗：' + (e.message || e); }
+  });
+  const copy = h('button', { type: 'button', class: 'btn' }, '複製程式碼');
+  copy.addEventListener('click', async () => { out.textContent = (await copyText(RESOLVER_SCRIPT)) ? '已複製程式碼。' : '自動複製失敗，請長按下面的程式碼複製。'; });
+  const steps = h('details', { class: 'set-more', open: !cur }, h('summary', null, '設定：Threads 分享網址轉換（只需一次）'),
+    h('ol', { class: 'steps' },
+      h('li', null, '電腦或手機打開 script.google.com，新增專案，把專案內容整個換成下面的程式碼（按「複製程式碼」），儲存。'),
+      h('li', null, '右上角「部署」→「新增部署作業」→ 類型選「網頁應用程式」；執行身分「我」、誰可以存取「所有人」→ 部署。第一次會要你授權（允許它連外部網址）。'),
+      h('li', null, '複製「網頁應用程式」的網址（…/exec 結尾），貼到下面、按「儲存」，再按「測試」。')),
+    h('div', { class: 'row' }, copy),
+    h('pre', { class: 'raw wrap resolver-code' }, RESOLVER_SCRIPT),
+    h('div', { class: 'field' }, h('label', { for: 'resolver-url' }, 'Apps Script 網頁應用程式網址'), input),
+    h('div', { class: 'row' }, save, test),
+    h('p', { class: 'muted' }, '它只接受 Threads 分享網址，打開一次、回傳轉到的貼文網址；分享代碼只經過你自己的 Google 與 Threads。網址加密存在這支手機。'));
+  return [secTitle('網址清理'), h('div', { class: 'card' },
+    h('p', { class: 'muted set-line' }, cur ? 'Threads 分享網址（threads.com/share/…）貼上就會自動還原、清掉 xmt。' : '一般網址貼上就清；threads.com/share/… 這種要先設定下面的轉換服務。'),
+    out, steps)];
 }
 async function viewSearch(q) {
   if (/^\s*https?:\/\//i.test(q)) return viewCleanUrl(q);   // 貼的是網址：清理，不搜尋

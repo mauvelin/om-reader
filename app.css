@@ -630,3 +630,9 @@ details.folder .folder-n { color: var(--muted); font-size: var(--fs-chip); font-
 .folder-tree .list a.item.has-area { box-shadow: none; }
 /* 網址清理結果 */
 .clean-url .clean-out { font-family: ui-monospace, Menlo, monospace; font-size: 15px; overflow-wrap: anywhere; user-select: all; -webkit-user-select: all; margin: 0 0 var(--sp-2); }
+/* 同步頁「網址清理」的設定步驟與程式碼 */
+ol.steps { margin: var(--sp-2) 0; padding-left: 1.4em; }
+ol.steps li { margin: 0 0 var(--sp-2); line-height: 1.6; }
+pre.resolver-code { font-size: 12px; max-height: 14em; overflow: auto; }
+/* 狀態訊息裡的長網址要能換行（不然會把整頁撐寬）*/
+.status { overflow-wrap: anywhere; }
