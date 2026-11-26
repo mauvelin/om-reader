@@ -8,11 +8,15 @@
 const COURSE_INDEX = 'vault/self/resources/_courses.json';
 let COURSES = null;   // { list, byId, lessonById }
 let LREC = null;      // { progress: { media.key: {t_s, duration_s, completed, at} }, recent: { lesson_id: {course_id, at} } }
-let LEXPORT = null;    // learn-export.json（learn → App）：首頁分組、概念引用（規格：learn repo docs/om-app-contract.md §1）
+let LEXPORT = null;    // learn-export.json（learn → App）：練習目錄與清單（規格：learn repo docs/om-app-contract.md §1）
+// 資料包的 learn.json.gz（OM 雲端建置用 tools/learnmeta 算好）：首頁分組、概念引用。2026-11-26 起優先用它，
+// 不必等電腦上的 learn 匯出；資料包裡沒有時才退回 learn 匯出檔裡的同名兩塊。undefined＝還沒讀
+let LMETA;
+let LMERGED = null;   // { ex, meta, data }：合併結果的快取
 let lexportChecked = false;
 let LEXPORT_LOADING = false;   // 背景下載中（概念頁的提醒用）
-LOCK_HOOKS.push(() => { COURSES = null; LREC = null; LEXPORT = null; DOC_KIND = null; });
-function coursesReset() { COURSES = null; TERM_PAGES = null; DOC_KIND = null; }   // 同步完新資料時（core.js resetCaches）
+LOCK_HOOKS.push(() => { COURSES = null; LREC = null; LEXPORT = null; LMETA = undefined; LMERGED = null; DOC_KIND = null; });
+function coursesReset() { COURSES = null; TERM_PAGES = null; DOC_KIND = null; LMETA = undefined; LMERGED = null; }   // 同步完新資料時（core.js resetCaches）
 
 // 讀 learn 匯出到雲端硬碟「OM App/learn-export.json」的檔：先用手機上的加密快取；有登入時每次開 App 比對一次
 // 雲端硬碟上的版本（md5），變了才重新下載。沒登入、離線、沒權限都照用快取。
@@ -37,7 +41,23 @@ async function learnExport() {
       }
     });
   }
-  return LEXPORT ? LEXPORT.data : null;
+  const ex = LEXPORT ? LEXPORT.data : null;
+  const meta = await learnMeta();
+  if (!meta) return ex;
+  if (!LMERGED || LMERGED.ex !== ex || LMERGED.meta !== meta) {
+    LMERGED = { ex, meta, data: Object.assign({}, ex || {}, { courses: meta.courses, concepts: meta.concepts }) };
+  }
+  return LMERGED.data;
+}
+async function learnMeta() {
+  if (LMETA === undefined) {
+    try {
+      const b = await fileBlob('learn.json.gz');
+      const d = b ? await gunzipJSON(b) : null;
+      LMETA = d && d.format === 'om-learn-meta' ? d : null;
+    } catch (e) { LMETA = null; }
+  }
+  return LMETA;
 }
 async function learnExportRefresh() {
   {
