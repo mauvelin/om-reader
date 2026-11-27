@@ -8,8 +8,8 @@
 // 寫入時機（契約 §2.4）：有變動時寫（進度最多每分鐘一次）、離開 App 時一次；開 App 與回到前景時讀全部的檔並合併。
 'use strict';
 
-const REC_SECTIONS = ['progress', 'recent', 'bookmarks', 'practice_progress', 'practice_durations', 'favorites', 'practice_log'];
-const REC_DELETABLE = new Set(['bookmarks', 'favorites', 'practice_log']);
+const REC_SECTIONS = ['progress', 'recent', 'bookmarks', 'practice_progress', 'practice_durations', 'favorites', 'practice_log', 'practice_lists'];
+const REC_DELETABLE = new Set(['bookmarks', 'favorites', 'practice_log', 'practice_lists']);
 const REC_NAME_RE = /^[a-z0-9-]{1,32}\.json$/;
 const REC_DEVICE_RE = /^[a-z0-9-]{1,32}$/;
 const REC_DIR = ['OM App', '紀錄'];
@@ -61,6 +61,9 @@ const REC_ENTRY = {
   favorites: (e) => recDeleted(e) || (recKeys(e, ['at']) && recT(e.at)),
   practice_log: (e) => recDeleted(e) || (recKeys(e, ['practiced_at', 'source', 'at'], ['minutes']) && recT(e.practiced_at)
     && recStr(e.source) && recT(e.at) && (!('minutes' in e) || e.minutes === null || recS(e.minutes))),
+  // 自排練習清單（2026-11-27 起在 App 裡編輯；鍵＝建立清單的裝置產生的 uid）：整份清單一筆，at 最新的勝出
+  practice_lists: (e) => recDeleted(e) || (recKeys(e, ['name', 'items', 'at']) && recStr(e.name) && [...e.name].length <= 100
+    && Array.isArray(e.items) && e.items.length <= 1000 && e.items.every(recStr) && recT(e.at)),
 };
 const REC_LOG_KEY = /^[^|]+\|\d{4}-\d{2}-\d{2}$/;
 // 回傳 null＝合格；否則回傳不合格的原因（顯示在同步頁）
@@ -120,6 +123,7 @@ function recFix(s, e) {
   else if (s === 'practice_durations') o = { duration_s: e.duration_s, at: e.at };
   else if (s === 'favorites') o = { at: e.at };
   else if (s === 'practice_log') o = { practiced_at: e.practiced_at, minutes: e.minutes == null ? null : n0(e.minutes), source: e.source, at: e.at };
+  else if (s === 'practice_lists') o = { name: [...String(e.name || '')].slice(0, 100).join(''), items: (Array.isArray(e.items) ? e.items : []).filter(recStr).slice(0, 1000), at: e.at };
   return o && REC_ENTRY[s](o) ? o : null;
 }
 function recLocal(device) {

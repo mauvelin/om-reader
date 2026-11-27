@@ -23,6 +23,14 @@ function coursesReset() { COURSES = null; TERM_PAGES = null; DOC_KIND = null; LM
 // 手機上有存過一份時，先用存的把頁面開起來，比對新版放到背景（不擋畫面；2026-11-04 登入回來後卡在「開啟頁面…」）；
 // 第一次（還沒存過）才等雲端硬碟
 async function learnExport() {
+  // 2026-11-27 起資料包的 learn.json.gz 也帶練習目錄：三塊都有就完全不需要 learn 的匯出檔（本人：OM App 不依賴 learn）
+  const meta0 = await learnMeta();
+  if (meta0 && meta0.practice) {
+    if (!LMERGED || LMERGED.meta !== meta0 || LMERGED.ex !== null) {
+      LMERGED = { ex: null, meta: meta0, data: { courses: meta0.courses, concepts: meta0.concepts, practice: meta0.practice } };
+    }
+    return LMERGED.data;
+  }
   if (!LEXPORT) {
     const rec = await kvGet('learn-export');
     if (rec) { try { LEXPORT = JSON.parse(td.decode(await open_(rec))); } catch (e) { LEXPORT = null; } }
@@ -153,7 +161,7 @@ async function lrec() {
   if (r) { try { o = JSON.parse(td.decode(await open_(r))); } catch (e) { o = {}; } }
   LREC = { progress: o.progress || {}, recent: o.recent || {}, bookmarks: o.bookmarks || {},
     practice_progress: o.practice_progress || {}, practice_durations: o.practice_durations || {},
-    favorites: o.favorites || {}, practice_log: o.practice_log || {} };
+    favorites: o.favorites || {}, practice_log: o.practice_log || {}, practice_lists: o.practice_lists || {} };
   return LREC;
 }
 let lrecTimer = null;

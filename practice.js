@@ -1,7 +1,9 @@
 // OM Reader——練習層（P3）：瑜伽練習目錄、清單、播放、練習紀錄、最愛、墊旁模式。
 // 對照 learn 的行動版練習目錄（claude.ai 私人頁面，驗收後下架）與 learn 練習頁移植（learn repo docs/OM-App-整合計畫.md §4）。
-// 資料：learn 匯出到雲端硬碟的 learn-export.json 的 practice（目錄只列有雲端硬碟 ID 的影片、清單）；
-// 個人狀態（最愛、紀錄、進度）不在匯出檔裡，照 OM App ↔ learn 資料契約記在手機上（加密），P4 再同步到雲端硬碟。
+// 資料：資料包 learn.json.gz 的 practice（OM tools/learnmeta 算好；目錄只列有雲端硬碟 ID 的影片、系列與課堂錄影清單；
+// 2026-11-27 起，舊資料包才退回 learn 匯出到雲端硬碟的 learn-export.json）。
+// 個人狀態（最愛、紀錄、進度、自排清單）記在手機上（加密），經雲端硬碟「OM App/紀錄/」和其他裝置同步。
+// 自排清單 2026-11-27 起在 App 裡編輯（本人：OM App 不需要 learn），存在紀錄檔的 practice_lists。
 'use strict';
 
 const P_MINUTES = [['15', '15 分內', (m) => m != null && m <= 15], ['30', '30 分內', (m) => m != null && m <= 30],
@@ -16,8 +18,32 @@ async function practiceData() {
   const pr = ex && ex.practice;
   if (!pr || !(pr.items || []).length) return null;
   const byId = new Map(pr.items.map((x) => [x.id, x]));
-  const lists = (pr.lists || []).map((l, n) => ({ ...l, n, key: `${l.kind}:${l.name}`, rows: l.items.map((id) => byId.get(id)).filter(Boolean) })).filter((l) => l.rows.length);
+  const mine = userLists().map(([uid, l]) => ({ name: l.name, kind: 'user', teacher: '', items: l.items, uid, key: 'user:' + uid }));
+  const derived = (pr.lists || []).filter((l) => l.kind !== 'user').map((l) => ({ ...l, key: `${l.kind}:${l.name}` }));
+  const lists = [...mine, ...derived].map((l) => ({ ...l, rows: l.items.map((id) => byId.get(id)).filter(Boolean) }))
+    .filter((l) => l.kind === 'user' || l.rows.length);
   return { ...pr, byId, lists };
+}
+const listHref = (l, k, auto) => `#/practice/item/${encodeURIComponent(l.rows[k].id)}?list=${encodeURIComponent(l.key)}&k=${k}${auto ? '&auto=1' : ''}`;
+
+/* ── 自排清單：整份清單一筆紀錄（名稱＋依順序的影片 id），改名、增刪、調順序都換新的 at ── */
+function userLists() {
+  return Object.entries((LREC && LREC.practice_lists) || {}).filter(([, l]) => l && !l.deleted && l.name)
+    .sort((a, b) => a[1].name.localeCompare(b[1].name, 'zh-Hant'));
+}
+function listSave(uid, name, items) {
+  LREC.practice_lists[uid] = { name, items: [...items], at: new Date().toISOString() };
+  lrecSave();
+}
+function listNew(name, items) {
+  const uid = 'l-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
+  listSave(uid, name, items || []);
+  return uid;
+}
+function listDelete(uid) { LREC.practice_lists[uid] = { deleted: true, at: new Date().toISOString() }; lrecSave(); }
+function askListName(cur) {
+  const v = (window.prompt(cur ? '清單的新名稱' : '新清單的名稱', cur || '') || '').trim();
+  return v ? [...v].slice(0, 60).join('') : null;
 }
 const isFav = (id) => !!(LREC && LREC.favorites[id] && !LREC.favorites[id].deleted);
 const opened = (id) => !!(LREC && LREC.practice_progress[id]);
@@ -62,8 +88,8 @@ async function viewPractice(qs) {
   if (!data) {
     const s = await gSettings();
     return setView(head, h('p', { class: 'note' }, s.enabled && gHasToken()
-      ? '雲端硬碟「OM App」資料夾裡還沒有 learn 匯出的練習目錄（learn-export.json），請在電腦上的 learn 啟用匯出。'
-      : '練習目錄由 learn 匯出到雲端硬碟。到「同步」頁啟用「雲端硬碟影音」並登入 Google，第一次讀到之後離線也能看。'),
+      ? '資料包裡還沒有練習目錄。到「同步」頁按「檢查更新」，拿到最新的資料包就會出現。'
+      : '資料包裡還沒有練習目錄。到「同步」頁按「檢查更新」；要播放影片，還要啟用「雲端硬碟影音」並登入 Google。'),
       h('a', { class: 'btn primary', href: '#/settings' }, '前往設定'));
   }
   let view = new URLSearchParams(qs || '').get('view') || pstore('om-practice-view') || 'videos';
@@ -73,7 +99,7 @@ async function viewPractice(qs) {
     view = k;
     pstore('om-practice-view', k);
     setQs('view', k === 'videos' ? null : k);
-    pane.replaceChildren(k === 'videos' ? practiceVideos(data) : k === 'lists' ? practiceLists(data) : practiceLogView(data));
+    pane.replaceChildren(k === 'videos' ? practiceVideos(data) : k === 'lists' ? practiceListsPane() : practiceLogView(data));
   };
   setView(head, tabBar([['videos', `影片（${data.items.length}）`], ['lists', `清單（${data.lists.length}）`], ['log', '紀錄']], view, show), pane);
   show(view);
@@ -141,9 +167,29 @@ function practiceRow(r, href) {
 // 清單：本人排的＋系列（有集數）＋課堂錄影（依日期）；「接續」開下一支沒開過的（開過＝有播放紀錄；「重新開始」只影響這支手機的顯示）
 function listResetAt(l) { return (pstore('om-practice-reset') || {})[l.key] || ''; }
 function listDone(l) { const r = listResetAt(l); return l.rows.map((x) => { const p = LREC.practice_progress[x.id]; return !!(p && p.at > r); }); }
-function practiceLists(data) {
+// 清單分頁：每次改動（新增、改名、刪除、調順序）後重新讀一次資料再畫；editing＝正在編輯順序的清單 uid
+function practiceListsPane() {
+  const box = h('div', null);
+  const paint = async (editing) => {
+    const data = await practiceData();
+    if (data) box.replaceChildren(practiceLists(data, typeof editing === 'string' ? editing : null, paint));
+  };
+  paint();
+  return box;
+}
+function practiceLists(data, editing, repaint) {
+  const add = h('button', { type: 'button', class: 'btn', onclick: () => { const name = askListName(); if (name) { listNew(name); repaint(); } } }, svgIcon('plus'), '新增清單');
+  const top = h('div', { class: 'row p-listbar' }, add,
+    h('span', { class: 'muted' }, '在影片頁按「＋」把影片放進清單。清單會和其他裝置同步。'));
   const wrap = h('ul', { class: 'p-lists' });
   for (const l of data.lists) {
+    if (l.kind === 'user' && !l.rows.length) {
+      wrap.append(h('li', { class: 'card p-list' },
+        h('div', { class: 'p-lhead' }, h('div', null, h('h3', null, h('span', { class: 'tag' }, P_KIND.user), ' ', l.name),
+          h('p', { class: 'muted' }, '還沒有影片。到影片頁按「＋」加進來。')), userListTools(l, false, repaint))));
+      continue;
+    }
+    if (l.kind === 'user' && editing === l.uid) { wrap.append(userListEditor(l, data, repaint)); continue; }
     const done = listDone(l);
     const next = done.findIndex((x) => !x);
     const unit = P_UNIT[l.kind] || '支';
@@ -153,19 +199,61 @@ function practiceLists(data) {
     const strip = h('div', { class: 'p-strip', 'aria-hidden': 'true' });
     l.rows.forEach((r, k) => { const sp = h('span', { 'data-s': r.style || '', class: done[k] ? 'on' : null }); sp.style.flex = String(Math.max(1, r.duration_min || 1)); strip.append(sp); });
     const action = next >= 0
-      ? h('a', { class: 'btn primary', href: `#/practice/item/${encodeURIComponent(l.rows[next].id)}?list=${l.n}&k=${next}` }, svgIcon('play'), `${next ? '接續' : '開始'}${label(next)}`)
-      : h('button', { type: 'button', class: 'btn quiet', onclick: () => { const m = pstore('om-practice-reset') || {}; m[l.key] = new Date().toISOString(); pstore('om-practice-reset', m); wrap.replaceWith(practiceLists(data)); } }, '全部開過・重新開始');
+      ? h('a', { class: 'btn primary', href: listHref(l, next) }, svgIcon('play'), `${next ? '接續' : '開始'}${label(next)}`)
+      : h('button', { type: 'button', class: 'btn quiet', onclick: () => { const m = pstore('om-practice-reset') || {}; m[l.key] = new Date().toISOString(); pstore('om-practice-reset', m); repaint(); } }, '全部開過・重新開始');
     wrap.append(h('li', { class: 'card p-list' },
       h('div', { class: 'p-lhead' }, h('div', null, h('h3', null, h('span', { class: 'tag' }, P_KIND[l.kind] || ''), ' ', l.name),
-        h('p', { class: 'muted' }, [l.teacher, `${l.rows.length} ${unit}`, total ? `共 ${total} 分` : '', nOpened ? `開過 ${nOpened}／${l.rows.length}` : ''].filter(Boolean).join('・'))), action),
+        h('p', { class: 'muted' }, [l.teacher, `${l.rows.length} ${unit}`, total ? `共 ${total} 分` : '', nOpened ? `開過 ${nOpened}／${l.rows.length}` : ''].filter(Boolean).join('・'))),
+        h('div', { class: 'row' }, action, l.kind === 'user' ? userListTools(l, true, repaint) : null)),
       strip,
       h('details', { open: l.rows.length <= 8 }, h('summary', null, `全部 ${l.rows.length} ${unit}`),
         h('ol', { class: 'p-entries' }, l.rows.map((r, k) => h('li', { class: (done[k] ? 'opened' : '') + (k === next ? ' next' : '') },
-          h('a', { href: `#/practice/item/${encodeURIComponent(r.id)}?list=${l.n}&k=${k}` }, h('span', { class: 'eno' }, label(k)),
+          h('a', { href: listHref(l, k) }, h('span', { class: 'eno' }, label(k)),
             h('span', { class: 'et' }, r.title, h('small', null, [r.style, r.level ? `Lv ${r.level}` : '', r.energy].filter(Boolean).join('・'))),
             h('span', { class: 'em' }, r.duration_min != null ? `${r.duration_min} 分` : ''))))))));
   }
-  return data.lists.length ? wrap : h('p', { class: 'muted' }, '還沒有清單。');
+  return h('div', null, top, data.lists.length ? wrap : h('p', { class: 'muted' }, '還沒有清單。'));
+}
+// 自排清單的管理鈕：（有影片時）編輯順序、改名、刪除
+function userListTools(l, canEdit, repaint) {
+  return h('div', { class: 'row p-ltools' },
+    canEdit ? h('button', { type: 'button', class: 'btn quiet', onclick: () => repaint(l.uid) }, '編輯') : null,
+    h('button', { type: 'button', class: 'btn quiet', onclick: () => { const name = askListName(l.name); if (name && name !== l.name) { listSave(l.uid, name, l.items); repaint(); } } }, '改名'),
+    h('button', { type: 'button', class: 'btn quiet', onclick: () => { if (window.confirm(`刪除清單「${l.name}」？清單裡的影片不會被刪。`)) { listDelete(l.uid); repaint(); } } }, '刪除'));
+}
+// 編輯順序：每支一列，往上、往下、移出清單；改完就存（目錄裡已經沒有的影片照樣留在紀錄裡，只是不顯示）
+function userListEditor(l, data, repaint) {
+  const ids = l.items.filter((id) => data.byId.has(id));
+  const hidden = l.items.filter((id) => !data.byId.has(id));
+  const save = (next) => { listSave(l.uid, l.name, [...next, ...hidden]); repaint(l.uid); };
+  const move = (k, d) => { const next = [...ids]; [next[k], next[k + d]] = [next[k + d], next[k]]; save(next); };
+  const ic = (icon, label, onclick, disabled) => h('button', { type: 'button', class: 'btn quiet p-ic', 'aria-label': label, title: label, onclick, disabled: disabled || null }, svgIcon(icon));
+  return h('li', { class: 'card p-list p-editing' },
+    h('div', { class: 'p-lhead' }, h('h3', null, h('span', { class: 'tag' }, P_KIND.user), ' ', l.name),
+      h('button', { type: 'button', class: 'btn primary', onclick: () => repaint() }, '完成')),
+    h('ol', { class: 'p-entries p-edit' }, ids.map((id, k) => {
+      const r = data.byId.get(id);
+      return h('li', null, h('span', { class: 'eno' }, `${k + 1}.`),
+        h('span', { class: 'et' }, r.title, h('small', null, [r.style, r.duration_min != null ? `${r.duration_min} 分` : ''].filter(Boolean).join('・'))),
+        h('span', { class: 'p-eact' }, ic('up', '往上移', () => move(k, -1), k === 0), ic('down', '往下移', () => move(k, 1), k === ids.length - 1),
+          ic('close', '移出清單', () => save(ids.filter((_, j) => j !== k)))));
+    })));
+}
+// 播放頁的「加入清單」：列出自排清單，勾選＝放進那份清單；也可以直接開一份新清單
+function addToListPanel(item) {
+  const panel = h('div', { class: 'card p-addlist', hidden: true });
+  const paint = () => {
+    const rows = userLists().map(([uid, l]) => h('label', { class: 'p-addrow' },
+      h('input', { type: 'checkbox', checked: l.items.includes(item.id) || null, onchange: (e) => {
+        const cur = (LREC.practice_lists[uid] || {}).items || [];
+        listSave(uid, l.name, e.target.checked ? (cur.includes(item.id) ? cur : [...cur, item.id]) : cur.filter((x) => x !== item.id));
+      } }), ' ', l.name, h('small', { class: 'muted' }, ` ${l.items.length} 支`)));
+    panel.replaceChildren(h('p', { class: 'muted' }, rows.length ? '勾選要放進的清單：' : '還沒有自排清單。'), ...rows,
+      h('button', { type: 'button', class: 'btn quiet', onclick: () => { const name = askListName(); if (name) { listNew(name, [item.id]); paint(); } } }, svgIcon('plus'), '新清單'));
+  };
+  const btn = h('button', { type: 'button', class: 'btn quiet p-ic', 'aria-label': '加入清單', title: '加入清單', 'aria-expanded': 'false',
+    onclick: () => { panel.hidden = !panel.hidden; btn.setAttribute('aria-expanded', String(!panel.hidden)); if (!panel.hidden) paint(); } }, svgIcon('plus'));
+  return { btn, panel };
 }
 // 紀錄：近 60 天依日期分組；可刪除誤記（刪除標記照資料契約）
 function practiceLogView(data) {
@@ -174,7 +262,7 @@ function practiceLogView(data) {
   const since = dayKey(new Date(Date.now() - 60 * 86400000));
   const recent = rows.filter((r) => r.day >= since);
   const total = recent.reduce((s, r) => s + (r.minutes || 0), 0);
-  const wrap = h('div', null, h('p', { class: 'muted' }, recent.length ? `近 60 天練了 ${recent.length} 次、共 ${total} 分鐘。有開學習紀錄同步時，會和電腦（learn）與其他裝置同步。` : '近 60 天還沒有紀錄。播放時看到 80%，或按打勾圖示（練完了），就會記一筆。'));
+  const wrap = h('div', null, h('p', { class: 'muted' }, recent.length ? `近 60 天練了 ${recent.length} 次、共 ${total} 分鐘。有開學習紀錄同步時，會和其他裝置同步。` : '近 60 天還沒有紀錄。播放時看到 80%，或按打勾圖示（練完了），就會記一筆。'));
   let day = null, ul = null;
   for (const r of recent) {
     if (r.day !== day) { day = r.day; wrap.append(secTitle(day)); ul = h('ul', { class: 'list' }); wrap.append(ul); }
@@ -196,7 +284,7 @@ async function viewPracticeItem(id, qs) {
   const item = data && data.byId.get(id);
   if (!item) return setView(h('h1', null, '找不到這支練習'), h('p', null, h('a', { href: '#/practice' }, '回練習目錄')));
   const params = new URLSearchParams(qs || '');
-  const list = params.has('list') ? data.lists.find((l) => l.n === Number(params.get('list'))) : null;
+  const list = params.has('list') ? data.lists.find((l) => l.key === params.get('list')) : null;
   const k = list ? Number(params.get('k')) : -1;
   const s = await gSettings();
   const sig = viewAbort.signal;
@@ -240,7 +328,7 @@ async function viewPracticeItem(id, qs) {
     try {
       // 匯出檔帶的是雲端硬碟 ID：先確認檔案還在（不在垃圾桶），拿到大小給 Service Worker 補 Content-Range
       const f = await (await gfetch(`${DRIVE}/files/${encodeURIComponent(item.drive_id)}?fields=id,name,size,mimeType,trashed`)).json();
-      if (f.trashed) { status.textContent = '這支影片在雲端硬碟的垃圾桶裡。請在電腦上的 learn 重新匯出練習目錄。'; return; }
+      if (f.trashed) { status.textContent = '這支影片在雲端硬碟的垃圾桶裡。請在電腦上重新掃描練習目錄（OM 的 tools/learnmeta/practice/build_catalog.py）再推上去。'; return; }
       status.textContent = '';
       const p0 = LREC.practice_progress[item.id];
       const t = p0 && p0.duration_s && p0.t_s < p0.duration_s * 0.95 ? p0.t_s : 0;
@@ -252,18 +340,19 @@ async function viewPracticeItem(id, qs) {
   const playBtn = h('button', { type: 'button', class: 'btn primary', onclick: start }, svgIcon('play'), prog && prog.t_s > 5 && (!prog.duration_s || prog.t_s < prog.duration_s * 0.95) ? `從 ${clockShort(prog.t_s)}` : '播放');
   const matBtn = icBtn('mat', '墊旁模式', { onclick: () => matMode(true) });
   const nav = list ? h('div', { class: 'doc-nav' },
-    k > 0 ? h('a', { class: 'btn p-navic', href: `#/practice/item/${encodeURIComponent(list.rows[k - 1].id)}?list=${list.n}&k=${k - 1}`, 'aria-label': '上一支', title: `上一支：${list.rows[k - 1].title}` }, svgIcon('back')) : h('span'),
+    k > 0 ? h('a', { class: 'btn p-navic', href: listHref(list, k - 1), 'aria-label': '上一支', title: `上一支：${list.rows[k - 1].title}` }, svgIcon('back')) : h('span'),
     h('a', { class: 'btn quiet', href: '#/practice?view=lists' }, `${list.name}（${k + 1}／${list.rows.length}）`),
-    k + 1 < list.rows.length ? h('a', { class: 'btn p-navic', href: `#/practice/item/${encodeURIComponent(list.rows[k + 1].id)}?list=${list.n}&k=${k + 1}`, 'aria-label': '下一支', title: `下一支：${list.rows[k + 1].title}` }, svgIcon('chev')) : h('span')) : null;
-  const nextHref = list && k + 1 < list.rows.length ? `#/practice/item/${encodeURIComponent(list.rows[k + 1].id)}?list=${list.n}&k=${k + 1}&auto=1` : null;
+    k + 1 < list.rows.length ? h('a', { class: 'btn p-navic', href: listHref(list, k + 1), 'aria-label': '下一支', title: `下一支：${list.rows[k + 1].title}` }, svgIcon('chev')) : h('span')) : null;
+  const nextHref = list && k + 1 < list.rows.length ? listHref(list, k + 1, true) : null;
+  const addList = addToListPanel(item);
   const endNote = h('div', { class: 'note end-note', hidden: true });
   const head = h('div', { class: 'doc-head p-head', 'data-s': item.style || '' }, h('nav', { class: 'crumb' }, h('a', { href: '#/practice' }, '練習')), h('h1', null, item.title));
   const metaLine = [item.style, item.level ? `Lv ${item.level}` : '', item.teacher, item.series ? item.series + (item.episode != null ? ` 第 ${item.episode} 集` : '') : '', item.duration_min != null ? `${item.duration_min} 分鐘` : '', item.kind === 'audio' ? '音訊' : ''].filter(Boolean).join('・');
   setView(head, h('p', { class: 'page-sub' }, metaLine),
     h('div', { class: 'chips' }, item.energy ? h('span', { class: 'tag' }, h('span', { class: 'p-energy', 'data-e': item.energy }), item.energy) : null, (item.tags || []).map((x) => h('span', { class: 'tag' }, x))),
     h('section', { class: 'lesson-media' }, slot, status,
-      h('div', { class: 'row p-ctl' }, mine() ? null : playBtn, item.kind === 'audio' ? null : matBtn, favBtn, doneBtn, offSpec && (s.enabled || offE) ? offButton(offSpec, null, { icons: true }) : null,
-        h('a', { class: 'btn quiet p-ic', href: driveViewUrl(item.drive_id), target: '_blank', rel: 'noopener noreferrer', 'aria-label': '在雲端硬碟開啟', title: '在雲端硬碟開啟' }, svgIcon('external')))), endNote,
+      h('div', { class: 'row p-ctl' }, mine() ? null : playBtn, item.kind === 'audio' ? null : matBtn, favBtn, doneBtn, addList.btn, offSpec && (s.enabled || offE) ? offButton(offSpec, null, { icons: true }) : null,
+        h('a', { class: 'btn quiet p-ic', href: driveViewUrl(item.drive_id), target: '_blank', rel: 'noopener noreferrer', 'aria-label': '在雲端硬碟開啟', title: '在雲端硬碟開啟' }, svgIcon('external'))), addList.panel), endNote,
     item.summary ? h('p', null, item.summary) : null,
     (item.notes || []).length ? h('ul', { class: 'p-notes' }, item.notes.map((x) => h('li', null, x))) : null, nav);
   PLAYER_SLOT = { name: item.drive_id, el: slot };

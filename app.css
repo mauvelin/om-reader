@@ -554,6 +554,14 @@ li.choice .row { margin: 0; }
 .p-entries .et small { display: block; color: var(--muted); font-weight: normal; }
 .p-entries .eno, .p-entries .em { color: var(--muted); font-variant-numeric: tabular-nums; }
 .p-logrow { display: flex; align-items: center; }
+/* 自排清單的編輯（2026-11-27） */
+.p-listbar { align-items: center; margin-bottom: var(--sp-3); }
+.p-ltools { gap: var(--sp-1); }
+.p-edit li { display: grid; grid-template-columns: auto 1fr auto; gap: var(--sp-2); align-items: center; padding: 6px 0; border-top: 1px solid var(--line); }
+.p-eact { display: flex; gap: 2px; }
+.p-addlist { margin-top: var(--sp-2); }
+.p-addrow { display: flex; align-items: center; gap: var(--sp-1); padding: 8px 0; border-top: 1px solid var(--line); }
+.p-addrow input { width: 20px; height: 20px; }
 .p-logrow a.item { flex: 1; min-width: 0; }
 .doc-head.p-head { padding-left: calc(var(--sp-3) + 2px); box-shadow: inset 4px 0 0 var(--c); }
 .p-notes { color: var(--muted); }
