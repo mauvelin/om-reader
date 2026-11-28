@@ -370,17 +370,6 @@ label.check input { width: 20px; height: 20px; accent-color: var(--accent); }
 .seg-tabs.one-line { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin-top: var(--sp-2); }
 .seg-tabs.one-line::-webkit-scrollbar { display: none; }
 .seg-tabs.one-line button { flex: none; white-space: nowrap; }
-.ctoc { border: 1px solid var(--line); border-radius: 0; padding: var(--sp-2) var(--sp-3); margin: var(--sp-2) 0 var(--sp-4); }
-.ctoc > summary { display: flex; align-items: center; gap: 6px; cursor: pointer; font-weight: var(--fw-strong); color: var(--muted); }
-.ctoc > summary svg.i { width: 18px; height: 18px; }
-.ctoc-row { display: flex; justify-content: space-between; align-items: baseline; gap: var(--sp-3); padding: 7px 0; border-bottom: 1px solid var(--line);
-  color: var(--fg); text-decoration: none; }
-.ctoc-row > .muted { flex: none; white-space: nowrap; }
-.ctoc-unit > summary { list-style: none; cursor: pointer; }
-.ctoc-unit > summary::-webkit-details-marker { display: none; }
-.ctoc-unit > summary .ctoc-row > span:first-child::before { content: "\25B8  "; color: var(--muted); }
-.ctoc-unit[open] > summary .ctoc-row > span:first-child::before { content: "\25BE  "; }
-.ctoc-sub { padding-left: var(--sp-4); }
 .shared { font-weight: normal; font-size: var(--fs-chip); color: var(--ink-indigo); margin-left: 6px; }
 .chapter-head { position: sticky; top: var(--bar-h, 62px); z-index: 3; background-color: var(--bg); scroll-margin-top: var(--bar-h, 62px); }
 .unit-head { scroll-margin-top: var(--bar-h, 62px); }
@@ -393,8 +382,6 @@ label.check input { width: 20px; height: 20px; accent-color: var(--accent); }
 .next-tag { display: inline-block; margin-right: 6px; padding: 0 6px; font-size: var(--fs-chip); color: var(--on-color); background: var(--accent); border-radius: 999px; }
 .chapter-head { font-size: var(--fs-body); color: var(--fg); }
 .ch-frac { margin-left: 8px; font-size: var(--fs-chip); font-weight: normal; color: var(--muted); }
-.ctoc > summary .muted { font-weight: normal; }
-.ctoc a.ctoc-row.jump > .muted::after { content: "  \203A"; }
 .lesson-ctl .done-ic { gap: 6px; padding: 0 10px; font-size: var(--fs-chip); }
 .lesson-ctl .done-ic.on { color: var(--ink-moss); background: transparent; }
 .lesson-ctl label.check.follow input { accent-color: var(--ink-stone); }
@@ -409,11 +396,8 @@ label.check input { width: 20px; height: 20px; accent-color: var(--accent); }
 .media-row .mchip .off-btn { border: 1px solid var(--line2); border-radius: var(--r-btn); }
 .chapter-head { flex-wrap: nowrap; justify-content: space-between; }
 .chapter-head .ch-title { min-width: 0; }
-.chip-btn { flex: none; font-size: var(--fs-chip); font-weight: normal; color: var(--fg); background: var(--chip); border: 1px solid var(--line);
-  border-radius: 999px; padding: 2px 10px; text-decoration: none; cursor: pointer; }
 .ch-handouts { list-style: none; margin: 0 0 var(--sp-2); padding: var(--sp-2) var(--sp-3); border: 1px solid var(--line); border-radius: 0; }
 .ch-handouts li { padding: 4px 0; }
-.ctoc.has-units > .ctoc-row > span:first-child::before { content: "\2022  "; color: var(--muted); }
 .chip-link { font-weight: normal; color: var(--fg); text-decoration: underline; text-decoration-color: var(--link-line); text-underline-offset: 3px; }
 .list a.item.lesson-row { display: grid; grid-template-columns: 1fr auto; column-gap: var(--sp-3); align-items: center; }
 .list a.item.lesson-row .t { grid-column: 1; }
@@ -712,20 +696,27 @@ pre.resolver-code { font-size: 12px; max-height: 14em; overflow: auto; }
 /* ── 課程頁目錄與章節標題：線條與底色收斂（本人 2026-11-28 第三輪）──
    只留兩條線：目錄下緣一條（跟講次列表分開）、大單元名稱上方的間距不畫線。
    章節標題不畫底線、底色跟頁面一樣（黏在頂端時才看得出它擋住下面）；講義、接著看都改成純文字，不用膠囊 */
-.ctoc { border: 0; border-bottom: 1px solid var(--line); padding: 0 0 var(--sp-2); margin: var(--sp-2) 0 var(--sp-4); }
-.ctoc > summary { padding: var(--sp-2) 0; }
-.ctoc-row { border-bottom: 0; padding: 6px 0; }
-.ctoc-sub { padding-left: var(--sp-5); }
-.ctoc-sub .ctoc-row { color: var(--muted); }
 .sec-title.unit-head { border-bottom: 0; padding-bottom: 0; margin: var(--sp-6) 0 0; font-size: var(--fs-body); color: var(--fg); letter-spacing: 0; }
 .chapter-head { border-bottom: 0; padding: 6px 0; margin: var(--sp-4) 0 var(--sp-1); background-color: var(--bg); background-image: var(--paper);
   font-size: var(--fs-label); font-weight: var(--fw-strong); color: var(--fg); }
 .unit-head + .ch-anchor + .chapter-head { margin-top: var(--sp-2); }
 .ch-frac { color: var(--muted); }
-.chip-btn { background: none; border: 0; border-radius: 0; padding: 4px 0 4px 8px; color: var(--muted); font-weight: normal; }
 .ch-handouts { border: 0; padding: 0 0 0 var(--sp-3); margin: 0 0 var(--sp-2); }
 .ch-handouts a { color: var(--fg); }
 .next-tag { background: none; color: var(--accent); padding: 0; border-radius: 0; font-weight: var(--fw-strong); }
 .next-tag::after { content: "・"; color: var(--muted); font-weight: normal; }
 .lesson-row .done { color: var(--muted); font-weight: normal; font-size: var(--fs-chip); }
 .lesson-ctl .done-ic.on, .lesson-ctl .done-ic:disabled { color: var(--muted); background: transparent; border-color: transparent; font-weight: normal; }
+
+/* 課程目錄用文章頁的 .toc（2026-11-28 第四輪）：列尾的看完進度；講義鈕＝「被引用 N ⌄」那種按鈕，章節標題裡做小一號 */
+.toc-link { display: flex; justify-content: space-between; align-items: baseline; gap: var(--sp-3); }
+.toc-link .toc-n { flex: none; color: var(--muted); font-size: var(--fs-chip); font-variant-numeric: tabular-nums; }
+.chapter-head .btn.ch-btn { flex: none; min-height: 32px; padding: 2px 10px; font-weight: normal; }
+.chapter-head .btn.ch-btn .i { width: 16px; height: 16px; }
+.chapter-head .btn.ch-btn.open .i { transform: rotate(180deg); }
+.chapter-head + .ch-handouts { margin-top: var(--sp-1); }
+/* 章節的講義清單：跟目錄同一種白底清單（2026-11-28 第四輪） */
+.ch-handouts { list-style: none; margin: 0 0 var(--sp-2); padding: 4px 0; background: var(--card); border: 1px solid var(--line); }
+.ch-handouts li { padding: 0; }
+.ch-handouts a { display: block; padding: 8px var(--sp-4); font-size: var(--fs-chip); color: var(--fg); text-decoration: none; }
+.ch-handouts a:active { background: var(--chip); }

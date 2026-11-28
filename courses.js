@@ -449,35 +449,32 @@ function courseLessons(c) {
   const units = [...new Set(groups.map((g) => g.unit).filter(Boolean))];
   const heads = groups.filter((g) => g.head);
   const tocOn = total >= 15 && (heads.length >= 3 || units.length >= 3);
-  // 章少的課目錄預設收合成一行（本人 2026-11-28，獨立審核）：展開後的樣子跟章多的課一樣
-  const tocN = units.length + groups.filter((g) => !g.unit && g.head).length;
-  const toc = tocOn ? h('details', { class: 'ctoc' + (units.length ? ' has-units' : '') },
-    h('summary', null, svgIcon('list'), '目錄', h('span', { class: 'muted' }, `・${tocN} ${units.length ? '單元' : '章'}`))) : null;
-  if (toc && tocN >= 6) toc.open = true;
+  // 目錄跟文章頁（MOC）同一個元件（本人 2026-11-28：MOC 頁的比較清楚）：預設收合「目錄（N）」，
+  // 一列一章、大單元底下的章往內縮成灰字；點了捲到那一章。列尾只多一個灰色的看完進度
+  const tocList = h('ol', { class: 'toc-list' });
+  const tocN = heads.length + units.length;
+  const toc = tocOn ? h('details', { class: 'toc' }, h('summary', null, `目錄（${tocN}）`), tocList) : null;
   // 「接著看」：照課程順序第一個沒看完的講次（這門課有看過才標）
   const all = groups.flatMap((g) => g.lessons);
   const nextL = all.some(isDone) ? all.find((l) => !isDone(l)) : null;
   const frac = (ls) => { const d = ls.filter(isDone).length; return d === ls.length && d ? `✓ ${d} 講` : `${d} / ${ls.length}`; };
   if (toc) wrap.append(toc);
-  const jump = (el) => (e) => { e.preventDefault(); el.scrollIntoView({ block: 'start' }); };
-  const tocRow = (label, ls, el, extra) => h('a', { class: 'ctoc-row jump', href: '#', onclick: jump(el) }, h('span', null, label, extra || null),
-    h('span', { class: 'muted' }, frac(ls)));
-  let unit, list = null, unitBox = null, unitLs = [], unitRow = null;
-  const closeUnit = () => { if (unitRow) unitRow.lastChild.textContent = frac(unitLs); };
+  const tocItem = (label, ls, el, sub, extra) => {
+    const n = h('span', { class: 'toc-n' }, frac(ls));
+    tocList.append(h('li', { class: sub ? 'sub' : null },
+      h('button', { type: 'button', class: 'toc-link', onclick: () => el.scrollIntoView({ block: 'start' }) }, h('span', null, label, extra || null), n)));
+    return n;
+  };
+  let unit, list = null, unitLs = [], unitN = null;
+  const closeUnit = () => { if (unitN) unitN.textContent = frac(unitLs); };
   for (const g of groups) {
     if ((g.unit || null) !== unit) {
       closeUnit();
-      unit = g.unit || null; unitBox = null; unitLs = []; unitRow = null; list = null;
+      unit = g.unit || null; unitLs = []; unitN = null; list = null;
       if (unit) {
         const el = h('div', { class: 'sec-title unit-head' }, unit);
         wrap.append(el);
-        if (toc) {
-          unitBox = h('div', { class: 'ctoc-sub' });
-          // 大單元那一列只負責展開／收合（點章名才跳過去）
-          unitRow = h('div', { class: 'ctoc-row' }, h('span', null, unit), h('span', { class: 'muted' }, ''));
-          const d = h('details', { class: 'ctoc-unit' }, h('summary', null, unitRow), unitBox);
-          toc.append(d);
-        }
+        if (toc) unitN = tocItem(unit, [], el, false);
       }
     }
     unitLs.push(...g.lessons);
@@ -489,18 +486,19 @@ function courseLessons(c) {
       // 講義（本人 2026-11-28：多則時跟章名混在一起太亂）：一則＝一顆「講義」鈕；多則＝「講義 N」，點開在章名下方列出
       const hName = (x) => { const t = (x.handout_title || x.title || '').replace(/^.*｜/, ''); return /^(講義|簡報|講義與簡報)$/.test(t) ? `${g.title || ''} 講義`.trim() : t; };
       const box = hs.length > 1 ? h('ul', { class: 'ch-handouts', hidden: true }, hs.map((o) => h('li', null, h('a', { href: pageHref(o.d.p) }, hName(o.x))))) : null;
+      // 講義鈕跟文章頁的「被引用 N ⌄」同一種按鈕（本人 2026-11-28）
       const hBtn = !hs.length ? null : hs.length === 1
-        ? h('a', { class: 'chip-btn', href: pageHref(hs[0].d.p), title: hName(hs[0].x) }, '講義 ›')
-        : h('button', { type: 'button', class: 'chip-btn', 'aria-expanded': 'false', onclick: (e) => {
+        ? h('a', { class: 'btn jump ch-btn', href: pageHref(hs[0].d.p), title: hName(hs[0].x) }, '講義', svgIcon('chev'))
+        : h('button', { type: 'button', class: 'btn jump ch-btn', 'aria-expanded': 'false', onclick: (e) => {
           box.hidden = !box.hidden; e.currentTarget.setAttribute('aria-expanded', String(!box.hidden));
-          e.currentTarget.textContent = `講義 ${hs.length} ${box.hidden ? '▾' : '▴'}`; } }, `講義 ${hs.length} ▾`);
+          e.currentTarget.classList.toggle('open', !box.hidden); } }, `講義 ${hs.length}`, svgIcon('down'));
       const el = h('div', { class: 'chapter-head' }, h('span', { class: 'ch-title' }, g.title, shared,
         h('span', { class: 'ch-frac' }, frac(g.lessons))), hBtn);
       const mark = h('div', { class: 'ch-anchor' });   // 章標題會黏在頂端，捲動目標放在它前面的不黏元素
       wrap.append(mark, el);
       if (box) wrap.append(box);
       list = null;
-      if (toc) (unitBox || toc).append(tocRow(g.title, g.lessons, mark, g.from ? h('span', { class: 'shared' }, '共用') : null));
+      if (toc) tocItem(g.title, g.lessons, mark, !!unit, g.from ? h('span', { class: 'shared' }, '共用') : null);
     }
     if (!list) { list = h('ul', { class: 'list lessons' }); wrap.append(list); }
     for (const l of g.lessons) list.append(lessonRow(l, g.head ? g.title : null, nextL && l.id === nextL.id));
