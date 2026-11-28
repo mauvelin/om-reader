@@ -385,6 +385,28 @@ label.check input { width: 20px; height: 20px; accent-color: var(--accent); }
 .chapter-head { position: sticky; top: var(--bar-h, 62px); z-index: 3; background-color: var(--bg); scroll-margin-top: var(--bar-h, 62px); }
 .unit-head { scroll-margin-top: var(--bar-h, 62px); }
 .ch-anchor { height: 0; scroll-margin-top: var(--bar-h, 62px); }
+/* 2026-11-28 第二輪（兩份審核整合）：看完方框、章節標題、目錄、接著看、播放頁 */
+.done-box { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; box-sizing: border-box;
+  border: 1.5px solid var(--line2); border-radius: 0; font-size: 14px; line-height: 1; color: var(--on-color); font-weight: var(--fw-strong); }
+.done-box.on { background: var(--ink-moss); border-color: var(--ink-moss); }
+.list a.item.lesson-row .done-box { grid-column: 2; grid-row: 1 / span 2; }
+.next-tag { display: inline-block; margin-right: 6px; padding: 0 6px; font-size: var(--fs-chip); color: var(--on-color); background: var(--accent); border-radius: 999px; }
+.chapter-head { font-size: var(--fs-body); color: var(--fg); }
+.ch-frac { margin-left: 8px; font-size: var(--fs-chip); font-weight: normal; color: var(--muted); }
+.ctoc > summary .muted { font-weight: normal; }
+.ctoc a.ctoc-row.jump > .muted::after { content: "  \203A"; }
+.lesson-ctl .done-ic { gap: 6px; padding: 0 10px; font-size: var(--fs-chip); }
+.lesson-ctl .done-ic.on { color: var(--ink-moss); background: transparent; }
+.lesson-ctl label.check.follow input { accent-color: var(--ink-stone); }
+.lesson-ctl .rate-sel { color: var(--fg); border-color: var(--line2); }
+.lesson-right .md.learn .ts { color: var(--accent); background: var(--accent-weak); }
+.lesson-right > .seg-tabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+.lesson-right > .seg-tabs > button[role=tab] { flex: none; padding-left: 10px; padding-right: 10px; white-space: nowrap; }
+.lesson-right > .seg-tabs > .find-open { margin-left: auto; flex: none; }
+.media-row .mchip { border: 0; background: transparent; gap: 6px; overflow: visible; }
+.media-row .mchip-main { border: 1px solid var(--line2); border-radius: var(--r-btn); background: var(--card); }
+.media-row .mchip.sel .mchip-main { background: var(--chip); border-color: var(--fg); }
+.media-row .mchip .off-btn { border: 1px solid var(--line2); border-radius: var(--r-btn); }
 .chapter-head { flex-wrap: nowrap; justify-content: space-between; }
 .chapter-head .ch-title { min-width: 0; }
 .chip-btn { flex: none; font-size: var(--fs-chip); font-weight: normal; color: var(--fg); background: var(--chip); border: 1px solid var(--line);

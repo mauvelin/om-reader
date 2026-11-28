@@ -196,8 +196,9 @@ function lessonProgress(l) {
 }
 function progressBadge(l) {
   const p = lessonProgress(l);
-  if (!p) return null;
-  if (p.completed) return h('span', { class: 'done', 'aria-label': '已看完' }, '✓');
+  // 看完＝實心綠底方框；沒看＝空方框；看到一半＝百分比（本人 2026-11-28，兩頁同一種樣子）
+  if (!p) return h('span', { class: 'done-box', 'aria-label': '還沒看' });
+  if (p.completed) return h('span', { class: 'done-box on', 'aria-label': '已看完' }, '✓');
   return h('span', { class: 'pct' }, p.pct != null ? `${p.pct}%` : clock(p.t_s));
 }
 // 課程目錄（索引的 outline，2026-11-28）：章節依序；from＝借入的講次（別門課的同一講、不複製，進度共用）
@@ -206,6 +207,18 @@ function courseGroups(c) {
   return c.outline.map((g) => ({ ...g, lessons: g.lessons.map((id) => (COURSES && COURSES.lessonById.get(id) || {}).lesson).filter(Boolean) }));
 }
 const courseAll = (c) => { const gs = courseGroups(c); return gs ? gs.flatMap((g) => g.lessons) : c.lessons; };
+// 講次顯示名稱（本人 2026-11-28）：拿掉跟章名、日期重複的字；拿完沒剩就用日期。原始標題不動
+const dateLong = (d) => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(d || ''); return m ? `${+m[2]} 月 ${+m[3]} 日` : ''; };
+function lessonDisplay(l, gTitle) {
+  let t = l.lesson_title || l.title || '';
+  const hadDate = !!(l.date && (t.includes(l.date.replace(/-/g, '')) || t.includes(l.date)));
+  if (l.date) t = t.replace(l.date.replace(/-/g, ''), '').replace(l.date, '');
+  const hadGroup = !!(gTitle && t.includes(gTitle));
+  if (gTitle) t = t.split(gTitle).join('');   // 拿完沒剩：列表用日期、沒日期就用原標題
+  t = t.replace(/^[\s　・｜|:\-]+|[\s　・｜|:\-]+$/g, '');
+  return { name: t, hadDate, hadGroup };
+}
+const fmtDur = (x) => { if (!x) return ''; const m = Math.round(x / 60); return m >= 60 ? `${Math.floor(m / 60)} 小時${m % 60 ? ` ${m % 60} 分` : ''}` : `${Math.max(1, m)} 分`; };
 const shortCourse = (id) => { const x = COURSES && COURSES.byId.get(id); return (x ? x.title : id).replace(/^商業思維學院 - /, ''); };
 
 /* ── 首頁：繼續上課 ── */
@@ -374,7 +387,7 @@ async function viewCourseById(id, qs) {
   if (offRow) {
     const badge = h('span', { class: 'badge' });
     const cnt = offRow.querySelector('.off-count');
-    const sync = () => { const m = cnt && cnt.textContent.match(/(\d+)／(\d+)/); badge.textContent = m ? `${m[1]}/${m[2]}` : ''; };
+    const sync = () => { const m = cnt && cnt.textContent.match(/(\d+)／(\d+)/); badge.textContent = !m ? '' : m[1] === m[2] ? '已離線' : `離線 ${m[1]}/${m[2]}`; };
     if (cnt) new MutationObserver(sync).observe(cnt, { childList: true, characterData: true, subtree: true });
     sync();
     tools.append(h('button', { type: 'button', class: 'btn icon', 'aria-label': '離線下載', title: '離線下載',
@@ -415,10 +428,15 @@ function courseBookmarkRow(c) {
 }
 // 講次（2026-11-28 起照索引的 outline）：大單元一列、章一列（帶該章講義）；借入的講次標「與〈某課〉共用」；
 // 15 講以上、分三組以上的課，最上方有目錄，點一章就捲過去；章標題往下捲時固定在頂端
-function lessonRow(l) {
+function lessonRow(l, gTitle, isNext) {
+  const { name, hadDate } = lessonDisplay(l, gTitle);
+  const lead = l.order || (hadDate || !name ? dateLong(l.date) : '');
+  const label = [lead, name].filter(Boolean).join('　') || l.lesson_title || l.title;
+  const audio = l.media && l.media.kind && /^mp3$|^m4a$/.test(l.media.kind);
+  const sub = [audio ? '聲音' : '', fmtDur(l.media && l.media.duration_s)].filter(Boolean).join('・');
   return h('li', null, h('a', { class: 'item lesson-row', href: '#/lesson/' + l.id },
-    h('span', { class: 't' }, `${l.order || l.date || ''}${l.order || l.date ? '　' : ''}${l.lesson_title || l.title}`),
-    h('span', { class: 'm' }, l.media && l.media.kind ? (/^mp[34]$|^m4a$/.test(l.media.kind) && l.media.kind !== 'mp4' ? '音訊' : '影片') : ''),
+    h('span', { class: 't' }, label),
+    h('span', { class: 'm' }, isNext ? h('span', { class: 'next-tag' }, '接著看') : null, sub),
     progressBadge(l)));
 }
 function courseLessons(c) {
@@ -430,13 +448,21 @@ function courseLessons(c) {
   const units = [...new Set(groups.map((g) => g.unit).filter(Boolean))];
   const heads = groups.filter((g) => g.head);
   const tocOn = total >= 15 && (heads.length >= 3 || units.length >= 3);
-  const toc = tocOn ? h('details', { class: 'ctoc' + (units.length ? ' has-units' : ''), open: '' }, h('summary', null, svgIcon('list'), '目錄')) : null;
+  // 章少的課目錄預設收合成一行（本人 2026-11-28，獨立審核）：展開後的樣子跟章多的課一樣
+  const tocN = units.length + groups.filter((g) => !g.unit && g.head).length;
+  const toc = tocOn ? h('details', { class: 'ctoc' + (units.length ? ' has-units' : '') },
+    h('summary', null, svgIcon('list'), '目錄', h('span', { class: 'muted' }, `・${tocN} ${units.length ? '單元' : '章'}`))) : null;
+  if (toc && tocN >= 6) toc.open = true;
+  // 「接著看」：照課程順序第一個沒看完的講次（這門課有看過才標）
+  const all = groups.flatMap((g) => g.lessons);
+  const nextL = all.some(isDone) ? all.find((l) => !isDone(l)) : null;
+  const frac = (ls) => { const d = ls.filter(isDone).length; return d === ls.length && d ? `✓ ${d} 講` : `${d} / ${ls.length}`; };
   if (toc) wrap.append(toc);
   const jump = (el) => (e) => { e.preventDefault(); el.scrollIntoView({ block: 'start' }); };
-  const tocRow = (label, ls, el, extra) => h('a', { class: 'ctoc-row', href: '#', onclick: jump(el) }, h('span', null, label, extra || null),
-    h('span', { class: 'muted' }, `${ls.filter(isDone).length ? ls.filter(isDone).length + '／' : ''}${ls.length} 講`));
+  const tocRow = (label, ls, el, extra) => h('a', { class: 'ctoc-row jump', href: '#', onclick: jump(el) }, h('span', null, label, extra || null),
+    h('span', { class: 'muted' }, frac(ls)));
   let unit, list = null, unitBox = null, unitLs = [], unitRow = null;
-  const closeUnit = () => { if (unitRow) unitRow.lastChild.textContent = `${unitLs.filter(isDone).length ? unitLs.filter(isDone).length + '／' : ''}${unitLs.length} 講`; };
+  const closeUnit = () => { if (unitRow) unitRow.lastChild.textContent = frac(unitLs); };
   for (const g of groups) {
     if ((g.unit || null) !== unit) {
       closeUnit();
@@ -465,8 +491,10 @@ function courseLessons(c) {
       const hBtn = !hs.length ? null : hs.length === 1
         ? h('a', { class: 'chip-btn', href: pageHref(hs[0].d.p), title: hName(hs[0].x) }, '講義')
         : h('button', { type: 'button', class: 'chip-btn', 'aria-expanded': 'false', onclick: (e) => {
-          box.hidden = !box.hidden; e.currentTarget.setAttribute('aria-expanded', String(!box.hidden)); } }, `講義 ${hs.length}`);
-      const el = h('div', { class: 'chapter-head' }, h('span', { class: 'ch-title' }, g.title, shared), hBtn);
+          box.hidden = !box.hidden; e.currentTarget.setAttribute('aria-expanded', String(!box.hidden));
+          e.currentTarget.textContent = `講義 ${hs.length} ${box.hidden ? '▾' : '▴'}`; } }, `講義 ${hs.length} ▾`);
+      const el = h('div', { class: 'chapter-head' }, h('span', { class: 'ch-title' }, g.title, shared,
+        h('span', { class: 'ch-frac' }, frac(g.lessons))), hBtn);
       const mark = h('div', { class: 'ch-anchor' });   // 章標題會黏在頂端，捲動目標放在它前面的不黏元素
       wrap.append(mark, el);
       if (box) wrap.append(box);
@@ -474,7 +502,7 @@ function courseLessons(c) {
       if (toc) (unitBox || toc).append(tocRow(g.title, g.lessons, mark, g.from ? h('span', { class: 'shared' }, '共用') : null));
     }
     if (!list) { list = h('ul', { class: 'list lessons' }); wrap.append(list); }
-    for (const l of g.lessons) list.append(lessonRow(l));
+    for (const l of g.lessons) list.append(lessonRow(l, g.head ? g.title : null, nextL && l.id === nextL.id));
   }
   closeUnit();
   return wrap;
@@ -616,11 +644,15 @@ async function viewLesson(id, qs) {
   });
   // 標記看完（本人 2026-11-04，比照練習頁的「練完了」）：圓圈打勾，播放中也在。看完的標記會同步到電腦與其他裝置，
   // 依 learn 的規則「看完不取消」（任何一台說看完就是看完），所以按下去先確認；看完後變綠、不能再按
-  const doneBtn = h('button', { type: 'button', class: 'btn quiet done-ic' }, svgIcon('done'));
+  // 看完：寫出字、用跟講次列表同一種方框（本人 2026-11-28，獨立審核：跟「跟隨」的勾分得開）
+  const doneBox = h('span', { class: 'done-box' });
+  const doneTxt = h('span', null, '看完');
+  const doneBtn = h('button', { type: 'button', class: 'btn done-ic' }, doneBox, doneTxt);
   const paintDone = () => {
     const p = lessonProgress(l);
     const on = !!(p && p.completed);
     const label = on ? '已看完' : '標記這一講看完';
+    doneBox.classList.toggle('on', on); doneBox.textContent = on ? '✓' : ''; doneTxt.textContent = on ? '已看完' : '看完';
     doneBtn.classList.toggle('on', on); doneBtn.disabled = on;
     doneBtn.setAttribute('aria-label', label); doneBtn.title = label;
   };
@@ -677,7 +709,7 @@ async function viewLesson(id, qs) {
     if (!key) { medRow.replaceChildren(); return; }
     const audioSel = mine() ? playingAlt() : wantAudio();
     if (isAudio) { medRow.replaceChildren(mchip('audio', '聲音', offSpec, true, null)); return; }
-    const kids = [mchip('video', '影片', offSpec, !audioSel, () => pick('video'))];
+    const kids = [mchip('video', l.media.bytes ? `影片 ${fmtSize(l.media.bytes)}` : '影片', offSpec, !audioSel, () => pick('video'))];
     if (alt) kids.push(mchip('audio', alt.size ? `聲音 ${fmtSize(alt.size)}` : '聲音',
       offSpec ? { ...offSpec, key: alt.name, title: offSpec.title + '（聲音）', driveName: alt.name } : null, audioSel, () => pick('audio')));
     medRow.replaceChildren(...kids);
@@ -712,10 +744,14 @@ async function viewLesson(id, qs) {
   tabs.push(['bookmarks', '書籤']);
   const panes = {};
   const pane = h('div', { class: 'tab-pane' });
-  const seekBtn = (t) => h('button', { type: 'button', class: 'ts', 'data-seek': String(t) }, clock(t));
+  // 一小時以內的講次，時間寫成「12:34」（本人 2026-11-28，獨立審核：「00:」沒有資訊）
+  const shortTs = !!(l.media && l.media.duration_s && l.media.duration_s < 3600);
+  const seekBtn = (t) => h('button', { type: 'button', class: 'ts', 'data-seek': String(t) }, shortTs ? clockShort(t) : clock(t));
   panes.transcript = () => {
     if (!text) return h('p', { class: 'muted' }, '這一講的逐字稿還沒同步。');
-    return learnHtml(LearnText.renderTranscript(text, l.transcript.body_start_line).html);
+    const el = learnHtml(LearnText.renderTranscript(text, l.transcript.body_start_line).html);
+    if (shortTs) el.querySelectorAll('.ts').forEach((b) => { if (/^00:\d\d:\d\d$/.test(b.textContent)) b.textContent = b.textContent.slice(3); });
+    return el;
   };
   panes.summary = () => {
     if (!summary) return h('p', { class: 'muted' }, '這一講還沒有 AI 摘要。');
@@ -942,8 +978,12 @@ async function viewLesson(id, qs) {
     prev ? h('a', { class: 'btn', href: '#/lesson/' + prev.id, 'aria-label': `上一講 ${prev.order || ''}` }, svgIcon('back'), prev.order || '上一講') : h('span'),
     h('a', { class: 'btn quiet', href: '#/course/' + encodeURIComponent(c.id) }, '講次目錄'),
     next ? h('a', { class: 'btn', href: '#/lesson/' + next.id, 'aria-label': `下一講 ${next.order || ''}` }, next.order || '下一講', svgIcon('chev')) : h('span'));
+  // 講名跟講次列表用同一套整理（本人 2026-11-28）：章名・日期・剩下的字（例：勝王瑜伽經・6 月 18 日）
+  const og = (courseGroups(c) || []).find((g) => g.head && g.lessons.some((x) => x.id === l.id));
+  const ln = lessonDisplay(l, og && og.title);
+  const h1Text = [ln.hadGroup ? og.title : '', ln.hadDate ? dateLong(l.date) : '', ln.name].filter(Boolean).join('・') || l.lesson_title || l.title;
   const head = areaColor(h('div', { class: 'doc-head' }, h('nav', { class: 'crumb' }, h('a', { href: '#/course/' + encodeURIComponent(c.id) }, c.title)),
-    h('h1', null, l.lesson_title || l.title)), null, c.category);
+    h('h1', null, h1Text)), null, c.category);
   // iPad 等寬螢幕：左欄播放（固定不捲走）、右欄逐字稿與其他分頁；iPhone 照常單欄（CSS 決定）
   // iPhone：播放區（影片、控制列、重點刻度）釘在頂列下方，頁籤列黏在播放區下方，逐字稿在底下捲動（learn 手機版的做法）
   const left = h('div', { class: 'lesson-left' }, media);
@@ -989,7 +1029,7 @@ async function viewLesson(id, qs) {
     for (const n of segs) { if (Number(n.dataset.t) <= startT) target = n; else break; }
     if (target) { target.classList.add('flash'); requestAnimationFrame(() => scrollToSeg(target)); }
   }
-  tabsEl.prepend(findButton(() => pane, { top: visTop }));   // 頁籤列最前面：在目前這個分頁裡搜尋
+  tabsEl.append(findButton(() => pane, { top: visTop }));   // 頁籤列最後面（2026-11-28 從最前面移來：搜尋是動作不是分頁）
   if (findQ && typeof findBar === 'function') findBar(pane, findQ, { top: visTop, from: startT ? [...pane.querySelectorAll('.seg[data-t]')].filter((n) => Number(n.dataset.t) <= startT).pop() : null });
 
   // 播放畫面：這一講的播放器已經在跑（例如從底部小播放器點回來）就借進來；之後才開的，開好會自己借進來
