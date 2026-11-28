@@ -200,6 +200,13 @@ function progressBadge(l) {
   if (p.completed) return h('span', { class: 'done', 'aria-label': '已看完' }, '✓');
   return h('span', { class: 'pct' }, p.pct != null ? `${p.pct}%` : clock(p.t_s));
 }
+// 課程目錄（索引的 outline，2026-11-28）：章節依序；from＝借入的講次（別門課的同一講、不複製，進度共用）
+function courseGroups(c) {
+  if (!c.outline) return null;
+  return c.outline.map((g) => ({ ...g, lessons: g.lessons.map((id) => (COURSES && COURSES.lessonById.get(id) || {}).lesson).filter(Boolean) }));
+}
+const courseAll = (c) => { const gs = courseGroups(c); return gs ? gs.flatMap((g) => g.lessons) : c.lessons; };
+const shortCourse = (id) => { const x = COURSES && COURSES.byId.get(id); return (x ? x.title : id).replace(/^商業思維學院 - /, ''); };
 
 /* ── 首頁：繼續上課 ── */
 async function continueSection() {
@@ -248,10 +255,11 @@ async function viewCourses(cat, lane) {
   const ex = await learnExport();
   const grp = ex && ex.courses && ex.courses.by_course;
   const row = (c) => {
-    const done = c.lessons.filter((l) => (lessonProgress(l) || {}).completed).length;
+    const all = courseAll(c);
+    const done = all.filter((l) => (lessonProgress(l) || {}).completed).length;
     const tags = grp && grp[c.id] ? (grp[c.id].tags || []) : [];
     return h('li', null, areaColor(h('a', { class: 'item', href: '#/course/' + encodeURIComponent(c.id) }, h('span', { class: 't' }, c.title),
-      h('span', { class: 'm' }, `${notesOnly(c) ? '只有筆記' : `${c.lessons.length} 講`}${done ? `・已看完 ${done}` : ''}${c.handouts.length ? `・講義 ${c.handouts.length}` : ''}${c.notes.length ? `・我的筆記 ${c.notes.length}` : ''}`),
+      h('span', { class: 'm' }, `${notesOnly(c) ? '只有筆記' : `${all.length} 講`}${done ? `・已看完 ${done}` : ''}${c.handouts.length ? `・講義 ${c.handouts.length}` : ''}${c.notes.length ? `・我的筆記 ${c.notes.length}` : ''}`),
       tags.length ? h('span', { class: 'chips' }, tags.filter((x) => x !== '只有筆記').map((x) => h('span', { class: 'tag' }, x))) : null), null, c.category));
   };
   if (grp) {   // learn 的分組：主題 → 老師（learn 的 config/course_groups.json，App 不移植分組規則）
@@ -315,17 +323,17 @@ async function viewCourseById(id, qs) {
   const c = ci && ci.byId.get(id);
   if (!c) return setView(h('h1', null, '找不到這門課'));
   await lrec();
-  const done = c.lessons.filter((l) => (lessonProgress(l) || {}).completed).length;
+  const all = courseAll(c);
+  const done = all.filter((l) => (lessonProgress(l) || {}).completed).length;
   const head = areaColor(h('div', { class: 'doc-head' }, h('nav', { class: 'crumb' }, h('a', { href: '#/courses' }, '課程')),
     h('h1', null, c.title)), null, c.category);
-  const sub = h('p', { class: 'page-sub' }, `${c.lessons.length} 講・已看完 ${done}／${c.lessons.length}`);
-  const tabs = [['lessons', '講次'], ['digest', '整門課摘要']];
-  if (c.handouts.length) tabs.push(['handouts', `講義（${c.handouts.length}）`]);
-  if (c.notes.length) tabs.push(['notes', `我的筆記（${c.notes.length}）`]);
+  // 上方精簡成一列（本人 2026-11-28）：領域、看完幾講＋細進度條；右邊三顆圖示＝搜尋本課、離線下載、複製書籤
+  const tabs = [['lessons', '講次'], ['digest', '摘要']];
+  if (c.handouts.length) tabs.push(['handouts', `講義 ${c.handouts.length}`]);
+  if (c.notes.length) tabs.push(['notes', `筆記 ${c.notes.length}`]);
   const exC = await learnExport();
   const cmap = exC && exC.concepts && exC.concepts.by_course ? exC.concepts.by_course[c.id] || [] : [];
-  if (cmap.length) tabs.push(['concepts', `概念地圖（${cmap.length}）`]);
-  tabs.push(['search', '搜尋本課']);
+  if (cmap.length) tabs.push(['concepts', `概念 ${cmap.length}`]);
   const pane = h('div', { class: 'tab-pane' });
   const show = async (k) => {
     setQs('tab', k === 'lessons' ? null : k);
@@ -336,12 +344,12 @@ async function viewCourseById(id, qs) {
     else if (k === 'notes') pane.replaceChildren(listOf(c.notes.map((x) => cat.byPath.get(vp(x.md))).filter(Boolean).map((d) => itemLink(d))));
     else if (k === 'concepts') pane.replaceChildren(listOf(cmap.map((x) => { const d = cat.byPath.get('vault/' + x.path);
       return h('li', null, h('a', { class: 'item', href: d ? pageHref(d.p) : '#/' }, h('span', { class: 't' }, x.title), h('span', { class: 'm' }, `引用 ${x.refs} 處・${x.lessons} 講`))); })));
-    else if (k === 'search') { const box = courseSearchBox(c); pane.replaceChildren(box); box.querySelector('input').focus(); }
   };
   let cur = qsTab(qs, 'lessons');
+  const openSearch = cur === 'search';
   if (!tabs.some((t) => t[0] === cur)) cur = 'lessons';
-  // 有影音的課：整門課一起下載離線（啟用雲端硬碟功能才出現）
-  const offSpecs = c.lessons.filter((l) => l.media && l.media.key && offCanMedia(l.media.key))
+  // 有影音的課：整門課一起下載離線（啟用雲端硬碟功能才出現）；借入的講次一起算
+  const offSpecs = all.filter((l) => l.media && l.media.key && offCanMedia(l.media.key))
     .map((l) => ({ key: l.media.key, src: l.media.source_file, title: `${c.title}｜${l.order ? l.order + ' ' : ''}${l.lesson_title || l.title}`, kind: 'lesson', ref: l.id, driveName: l.media.key }));
   const allAudio = offSpecs.every((x) => !/\.(mp4|m4v|mov|webm)$/i.test(x.key));
   const gs = await gSettings();
@@ -353,26 +361,118 @@ async function viewCourseById(id, qs) {
     hasAlt = (await Promise.all(first.map((x) => driveAlt(x.key, x.src).catch(() => null)))).some(Boolean);
   }
   const offRow = offSpecs.length && gs.enabled ? offCourseRow(offSpecs, allAudio ? '音檔' : '影音', hasAlt ? { courseId: c.id } : {}) : null;
-  setView(head, h('div', { class: 'chips' }, c.category ? areaChip(c.category) : null), sub, offRow, courseBookmarkRow(c), tabBar(tabs, cur, show), pane);
+  const slot = h('div', { class: 'ctool-slot' });
+  let slotKind = null;
+  const toggle = (kind, make) => {
+    if (slotKind === kind) { slot.replaceChildren(); slotKind = null; return; }
+    slot.replaceChildren(make()); slotKind = kind;
+  };
+  const tools = h('div', { class: 'ctools' });
+  const bSearch = h('button', { type: 'button', class: 'btn icon', 'aria-label': '搜尋本課', title: '搜尋本課',
+    onclick: () => { toggle('search', () => courseSearchBox(c)); const i = slot.querySelector('input'); if (i) i.focus(); } }, svgIcon('search'));
+  tools.append(bSearch);
+  if (offRow) {
+    const badge = h('span', { class: 'badge' });
+    const cnt = offRow.querySelector('.off-count');
+    const sync = () => { const m = cnt && cnt.textContent.match(/(\d+)／(\d+)/); badge.textContent = m ? `${m[1]}/${m[2]}` : ''; };
+    if (cnt) new MutationObserver(sync).observe(cnt, { childList: true, characterData: true, subtree: true });
+    sync();
+    tools.append(h('button', { type: 'button', class: 'btn icon', 'aria-label': '離線下載', title: '離線下載',
+      onclick: () => toggle('off', () => offRow) }, svgIcon('download'), badge));
+  }
+  const bm = courseBookmarkRow(c);
+  if (bm) tools.append(h('button', { type: 'button', class: 'btn icon', 'aria-label': bm.label, title: bm.label,
+    onclick: () => { slot.replaceChildren(bm.status); slotKind = 'bm'; bm.run(); } }, svgIcon('bookmark'), h('span', { class: 'badge' }, String(bm.n))));
+  const pct = all.length ? Math.round((done / all.length) * 100) : 0;
+  const meta = h('div', { class: 'cmeta' },
+    h('div', { class: 'cmeta-l' }, c.category ? areaChip(c.category) : null, h('span', { class: 'muted' }, `${done}／${all.length} 講看完`)),
+    tools);
+  const fill = h('span');
+  fill.style.width = pct + '%';   // CSP 擋 style 屬性，用 CSSOM 設
+  const bar = h('div', { class: 'cprog', role: 'progressbar', 'aria-valuenow': String(pct), 'aria-valuemin': '0', 'aria-valuemax': '100' }, fill);
+  const tb = tabBar(tabs, cur, show);
+  tb.classList.add('one-line');
+  setView(head, meta, bar, slot, tb, pane);
   show(cur);
+  if (openSearch) bSearch.click();
 }
 // 「複製本課全部書籤」（learn 課程頁同一顆）：照講次順序、同一講照時間，一行一筆，格式同單講的「複製成筆記格式」
+// 2026-11-28 起是課程頁上方的一顆圖示按鈕：回傳 { n, label, run, status }，沒有書籤回 null
 function courseBookmarkRow(c) {
-  const order = new Map(c.lessons.map((l, i) => [l.id, i]));
+  const all = courseAll(c);
+  const order = new Map(all.map((l, i) => [l.id, i]));
   const rows = () => Object.entries(LREC.bookmarks).filter(([, b]) => !b.deleted && order.has(b.lesson_id))
     .map(([uid, b]) => ({ uid, ...b })).sort((a, b) => order.get(a.lesson_id) - order.get(b.lesson_id) || a.t_s - b.t_s);
   const n = rows().length;
   if (!n) return null;
   const status = h('p', { class: 'status', role: 'status' });
-  const btn = h('button', { type: 'button', class: 'btn', onclick: async () => {
+  const run = async () => {
     const xs = rows();
-    const txt = xs.map((b) => bookmarkLine(c.lessons[order.get(b.lesson_id)], b)).join('\n');
-    status.textContent = (await copyText(txt)) ? `已複製 ${xs.length} 行（${new Set(xs.map((b) => b.lesson_id)).size} 講），貼到 Notion 的課程筆記即可。` : '自動複製失敗：' + txt;
-  } }, `複製本課全部書籤（${n}）`);
-  return h('div', null, h('div', { class: 'row' }, btn), status);
+    const txt = xs.map((b) => bookmarkLine(all[order.get(b.lesson_id)], b)).join('\n');
+    status.textContent = (await copyText(txt)) ? `已複製 ${xs.length} 行書籤（${new Set(xs.map((b) => b.lesson_id)).size} 講），貼到 Notion 的課程筆記即可。` : '自動複製失敗：' + txt;
+  };
+  return { n, label: `複製本課全部書籤（${n}）`, run, status };
+}
+// 講次（2026-11-28 起照索引的 outline）：大單元一列、章一列（帶該章講義）；借入的講次標「與〈某課〉共用」；
+// 15 講以上、分三組以上的課，最上方有目錄，點一章就捲過去；章標題往下捲時固定在頂端
+function lessonRow(l) {
+  return h('li', null, h('a', { class: 'item lesson-row', href: '#/lesson/' + l.id },
+    h('span', { class: 't' }, `${l.order || l.date || ''}${l.order || l.date ? '　' : ''}${l.lesson_title || l.title}`),
+    h('span', { class: 'm' }, l.media && l.media.kind ? (/^mp[34]$|^m4a$/.test(l.media.kind) && l.media.kind !== 'mp4' ? '音訊' : '影片') : ''),
+    progressBadge(l)));
+}
+function courseLessons(c) {
+  const groups = courseGroups(c);
+  if (!groups) return courseLessonsLegacy(c);
+  const wrap = h('div');
+  const isDone = (l) => (lessonProgress(l) || {}).completed;
+  const total = groups.reduce((n, g) => n + g.lessons.length, 0);
+  const units = [...new Set(groups.map((g) => g.unit).filter(Boolean))];
+  const heads = groups.filter((g) => g.head);
+  const tocOn = total >= 15 && (heads.length >= 3 || units.length >= 3);
+  const toc = tocOn ? h('details', { class: 'ctoc', open: '' }, h('summary', null, svgIcon('list'), '目錄')) : null;
+  if (toc) wrap.append(toc);
+  const jump = (el) => (e) => { e.preventDefault(); el.scrollIntoView({ block: 'start' }); };
+  const tocRow = (label, ls, el, extra) => h('a', { class: 'ctoc-row', href: '#', onclick: jump(el) }, h('span', null, label, extra || null),
+    h('span', { class: 'muted' }, `${ls.filter(isDone).length ? ls.filter(isDone).length + '／' : ''}${ls.length} 講`));
+  let unit, list = null, unitBox = null, unitLs = [], unitRow = null;
+  const closeUnit = () => { if (unitRow) unitRow.lastChild.textContent = `${unitLs.filter(isDone).length ? unitLs.filter(isDone).length + '／' : ''}${unitLs.length} 講`; };
+  for (const g of groups) {
+    if ((g.unit || null) !== unit) {
+      closeUnit();
+      unit = g.unit || null; unitBox = null; unitLs = []; unitRow = null; list = null;
+      if (unit) {
+        const el = h('div', { class: 'sec-title unit-head' }, unit);
+        wrap.append(el);
+        if (toc) {
+          unitBox = h('div', { class: 'ctoc-sub' });
+          // 大單元那一列只負責展開／收合（點章名才跳過去）
+          unitRow = h('div', { class: 'ctoc-row' }, h('span', null, unit), h('span', { class: 'muted' }, ''));
+          const d = h('details', { class: 'ctoc-unit' }, h('summary', null, unitRow), unitBox);
+          toc.append(d);
+        }
+      }
+    }
+    unitLs.push(...g.lessons);
+    if (g.head) {
+      const ids = new Set(g.lessons.map((l) => l.id));
+      const hs = g.from ? [] : c.handouts.filter((x) => (x.lesson_ids || []).some((id) => ids.has(id)));
+      const shared = g.from ? h('span', { class: 'shared' }, `與〈${shortCourse(g.from)}〉共用`) : null;
+      const el = h('div', { class: 'chapter-head' }, h('span', null, g.title), shared,
+        ...hs.map((x) => { const d = CAT.byPath.get(vp(x.md)); return d ? h('a', { class: 'chip-link', href: pageHref(d.p) }, '講義：' + (x.handout_title || x.title)) : null; }));
+      const mark = h('div', { class: 'ch-anchor' });   // 章標題會黏在頂端，捲動目標放在它前面的不黏元素
+      wrap.append(mark, el);
+      list = null;
+      if (toc) (unitBox || toc).append(tocRow(g.title, g.lessons, mark, g.from ? h('span', { class: 'shared' }, '共用') : null));
+    }
+    if (!list) { list = h('ul', { class: 'list lessons' }); wrap.append(list); }
+    for (const l of g.lessons) list.append(lessonRow(l));
+  }
+  closeUnit();
+  return wrap;
 }
 // 講次：多梯次依系列分組；章（NN.NN 的 NN）一列標題，帶該章講義；每講列尾 ✓ 或看到幾成
-function courseLessons(c) {
+function courseLessonsLegacy(c) {
   const wrap = h('div');
   const multi = new Set(c.lessons.map((l) => l.series || '')).size > 1;
   let series = null, chapter = null, list = null;

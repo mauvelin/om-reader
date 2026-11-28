@@ -358,6 +358,33 @@ label.check input { width: 20px; height: 20px; accent-color: var(--accent); }
 .tab-pane { min-height: 30vh; }
 .chapter-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); margin: var(--sp-5) 0 var(--sp-2); padding-bottom: 6px;
   border-bottom: 1px solid var(--line); font-size: var(--fs-label); font-weight: var(--fw-strong); color: var(--muted); }
+/* 課程頁上方一列＋目錄（2026-11-28）：卡片方角，只有按鈕圓角 */
+.cmeta { display: flex; justify-content: space-between; align-items: center; gap: var(--sp-2); margin: var(--sp-2) 0 6px; }
+.cmeta-l { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
+.ctools { display: flex; gap: 6px; flex: none; }
+.btn.icon { min-height: 36px; padding: 0 9px; gap: 4px; }
+.btn.icon .badge { font-size: var(--fs-chip); color: var(--muted); font-variant-numeric: tabular-nums; }
+.cprog { height: 3px; background: var(--line); margin: 0 0 var(--sp-2); }
+.cprog span { display: block; height: 3px; background: var(--ink-moss); }
+.ctool-slot:not(:empty) { margin: var(--sp-2) 0; }
+.seg-tabs.one-line { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin-top: var(--sp-2); }
+.seg-tabs.one-line::-webkit-scrollbar { display: none; }
+.seg-tabs.one-line button { flex: none; white-space: nowrap; }
+.ctoc { border: 1px solid var(--line); border-radius: 0; padding: var(--sp-2) var(--sp-3); margin: var(--sp-2) 0 var(--sp-4); }
+.ctoc > summary { display: flex; align-items: center; gap: 6px; cursor: pointer; font-weight: var(--fw-strong); color: var(--muted); }
+.ctoc > summary svg.i { width: 18px; height: 18px; }
+.ctoc-row { display: flex; justify-content: space-between; align-items: baseline; gap: var(--sp-3); padding: 7px 0; border-bottom: 1px solid var(--line);
+  color: var(--fg); text-decoration: none; }
+.ctoc-row > .muted { flex: none; white-space: nowrap; }
+.ctoc-unit > summary { list-style: none; cursor: pointer; }
+.ctoc-unit > summary::-webkit-details-marker { display: none; }
+.ctoc-unit > summary .ctoc-row > span:first-child::before { content: "\25B8  "; color: var(--muted); }
+.ctoc-unit[open] > summary .ctoc-row > span:first-child::before { content: "\25BE  "; }
+.ctoc-sub { padding-left: var(--sp-4); }
+.shared { font-weight: normal; font-size: var(--fs-chip); color: var(--ink-indigo); margin-left: 6px; }
+.chapter-head { position: sticky; top: var(--bar-h, 62px); z-index: 3; background-color: var(--bg); scroll-margin-top: var(--bar-h, 62px); }
+.unit-head { scroll-margin-top: var(--bar-h, 62px); }
+.ch-anchor { height: 0; scroll-margin-top: var(--bar-h, 62px); }
 .chip-link { font-weight: normal; color: var(--fg); text-decoration: underline; text-decoration-color: var(--link-line); text-underline-offset: 3px; }
 .list a.item.lesson-row { display: grid; grid-template-columns: 1fr auto; column-gap: var(--sp-3); align-items: center; }
 .list a.item.lesson-row .t { grid-column: 1; }
