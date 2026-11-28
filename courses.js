@@ -639,12 +639,7 @@ async function viewLesson(id, qs) {
   playBtn.hidden = mine();
   const playable = !!key && (s.enabled || !!offE || !!altOff);
   // 下載鈕跟著「影片｜聲音」的選擇換
-  const offSlot = h('span', { class: 'off-slot' });
-  const paintOff = () => {
-    if (!offSpec) return;
-    offSlot.replaceChildren(offButton(wantAudio() ? { ...offSpec, key: alt.name, title: offSpec.title + '（聲音）', driveName: alt.name } : offSpec, null, { icons: true }));
-  };
-  paintOff();
+  const paintOff = () => {};   // 2026-11-28 起下載鈕在「影片｜聲音」那一列，跟著 paintSrc 重畫
   // 要登入才能做的事：訊息旁直接給登入鈕，登入後回到這一講（不用繞去同步頁；本人 2026-11-04）
   const loginNote = (text) => mediaNote.replaceChildren(text, ' ',
     h('button', { type: 'button', class: 'btn', onclick: () => gLogin({ returnHash: location.hash }).catch((e) => { mediaNote.textContent = e.message; }) }, '登入 Google'));
@@ -667,14 +662,28 @@ async function viewLesson(id, qs) {
     await startAt(t);
   });
   // 「影片｜聲音」切換：還沒開始播時出現；播放中改用控制列上的「改聽聲音／改看影片」
-  const srcRow = h('div', { class: 'seg-tabs src-row', role: 'group', 'aria-label': '播放影片或聲音', hidden: true });
-  const paintSrc = () => {
-    srcRow.replaceChildren(...[['video', '影片'], ['audio', alt && alt.size ? `聲音（${fmtSize(alt.size)}）` : '聲音']].map(([v, name]) =>
-      h('button', { type: 'button', class: 'filter', 'aria-pressed': String((src === 'audio' && alt ? 'audio' : 'video') === v), onclick: () => { src = v; srcSet(c.id, v); paintSrc(); paintOff(); } }, name)));
-    srcRow.hidden = !alt || mine();
+  // 「影片｜聲音」一列（本人 2026-11-28）：每一種一顆，點名字選要播哪一種，點尾端的下載圖示存到手機；
+  // 一眼看得到這一講有沒有聲音檔。播放中點另一種＝從目前的秒數改播那一種
+  const medRow = h('div', { class: 'media-row', role: 'group', 'aria-label': '影片或聲音' });
+  const pick = (v) => {
+    if ((v === 'audio') === (mine() ? playingAlt() : wantAudio())) return;
+    if (mine()) { swap.click(); return; }
+    src = v; srcSet(c.id, v); paintSrc();
   };
-  if (playable) media.append(srcRow, h('div', { class: 'lesson-ctl' }, playBtn, rateSel, back10, fwd10,
-    h('label', { class: 'check follow', for: 'follow', title: '逐字稿跟隨播放' }, followBox, '跟隨'), fold, swap, doneBtn, offSlot));
+  const mchip = (kind, label, spec, selected, onPick) => h('span', { class: 'mchip' + (selected ? ' sel' : '') },
+    h('button', { type: 'button', class: 'mchip-main', 'aria-pressed': String(selected), onclick: onPick || null }, svgIcon(kind), label),
+    spec ? offButton(spec, null, { icons: true }) : null);
+  const paintSrc = () => {
+    if (!key) { medRow.replaceChildren(); return; }
+    const audioSel = mine() ? playingAlt() : wantAudio();
+    if (isAudio) { medRow.replaceChildren(mchip('audio', '聲音', offSpec, true, null)); return; }
+    const kids = [mchip('video', '影片', offSpec, !audioSel, () => pick('video'))];
+    if (alt) kids.push(mchip('audio', alt.size ? `聲音 ${fmtSize(alt.size)}` : '聲音',
+      offSpec ? { ...offSpec, key: alt.name, title: offSpec.title + '（聲音）', driveName: alt.name } : null, audioSel, () => pick('audio')));
+    medRow.replaceChildren(...kids);
+  };
+  if (playable) media.append(h('div', { class: 'lesson-ctl' }, playBtn, rateSel, back10, fwd10,
+    h('label', { class: 'check follow', for: 'follow', title: '逐字稿跟隨播放' }, followBox, '跟隨'), fold, swap, doneBtn));
   if (altKeys.length && s.enabled && gHasToken()) {   // 雲端硬碟上有沒有同名聲音檔：查到再顯示切換（不擋畫面）
     driveAlt(key, l.media.source_file).then((f) => { if (f) alt = { name: f.name, size: f.size }; else if (!altOff) alt = null; paintSrc(); paintOff(); }).catch(() => {});
   }
@@ -694,12 +703,12 @@ async function viewLesson(id, qs) {
     if (x && !mineIds.has(x.id) && !otherHandouts.some((o) => o.x.id === x.id)) otherHandouts.push({ x, lesson: y });
   }
   const tabs = [['transcript', '逐字稿'], ['summary', '摘要']];
-  if (c.handouts.length) tabs.push(['handouts', mineHandouts.length ? `講義（${mineHandouts.length}）` : '講義']);
+  if (c.handouts.length) tabs.push(['handouts', mineHandouts.length ? `講義 ${mineHandouts.length}` : '講義']);
   if (c.notes.length) tabs.push(['notes', '我的筆記']);
   const ex = await learnExport();
   TERM_PAGES = conceptByTitle(ex);
   const lconcepts = ex && ex.concepts && ex.concepts.by_lesson ? ex.concepts.by_lesson[l.id] || [] : [];
-  if (lconcepts.length) tabs.push(['concepts', `概念（${lconcepts.length}）`]);
+  if (lconcepts.length) tabs.push(['concepts', `概念 ${lconcepts.length}`]);
   tabs.push(['bookmarks', '書籤']);
   const panes = {};
   const pane = h('div', { class: 'tab-pane' });
@@ -939,8 +948,12 @@ async function viewLesson(id, qs) {
   // iPhone：播放區（影片、控制列、重點刻度）釘在頂列下方，頁籤列黏在播放區下方，逐字稿在底下捲動（learn 手機版的做法）
   const left = h('div', { class: 'lesson-left' }, media);
   const tabsEl = tabBar(tabs, cur, show);
-  const layout = h('div', { class: 'lesson-layout' + (playable ? ' has-player' : '') }, left, h('div', { class: 'lesson-right' }, tabsEl, pane));
-  setView(head, h('p', { class: 'page-sub' }, [l.order, l.series, l.date].filter(Boolean).join('・')), layout, back, toc, nav);
+  // 「影片｜聲音」那一列放在分頁列上面、不釘住：往下讀逐字稿時捲走，播放區不變高
+  const layout = h('div', { class: 'lesson-layout' + (playable ? ' has-player' : '') }, left,
+    h('div', { class: 'lesson-right' }, key && (playable || offSpec) ? medRow : null, tabsEl, pane));
+  // 標題下只留不重複的資訊（本人 2026-11-28）：課名已在上方、日期多半已在講名裡；多梯次的課才標梯次
+  const subTxt = l.series && l.series !== c.title && !c.title.endsWith(l.series) ? l.series : '';
+  setView(head, subTxt ? h('p', { class: 'page-sub' }, subTxt) : null, layout, back, toc, nav);
   const topBar = document.querySelector('.bar');
   const measure = () => {
     layout.style.setProperty('--bar-h', `${Math.round(topBar ? topBar.getBoundingClientRect().height : 0)}px`);
@@ -1012,8 +1025,8 @@ async function viewLesson(id, qs) {
       if (swap.dataset.to !== to) { swap.dataset.to = to; swap.replaceChildren(svgIcon(to)); swap.setAttribute('aria-label', to === 'video' ? '改看影片' : '改聽聲音'); swap.title = swap.getAttribute('aria-label'); }
     }
     back10.hidden = fwd10.hidden = !mine();
-    if (offSlot.classList.contains('compact') !== mine()) { offSlot.classList.toggle('compact', mine()); offEmit(null); }   // 播放中下載鈕只留短字，控制列才放得下一行
-    srcRow.hidden = !alt || mine();
+    const sel = mine() ? playingAlt() : wantAudio();
+    if (medRow.dataset.sel !== String(sel) + mine()) { medRow.dataset.sel = String(sel) + mine(); paintSrc(); }
     if (!mine()) { back.hidden = true; return; }
     const el = playerEl();
     if (Number.isFinite(el.duration)) drawTicks(el.duration);

@@ -449,6 +449,14 @@ label.check input { width: 20px; height: 20px; accent-color: var(--accent); }
 .doc-nav .p-navic .i { width: 22px; height: 22px; }
 .off-course { align-items: center; margin: var(--sp-2) 0 0; }
 .src-row { margin: var(--sp-2) 0 0; gap: 6px; }
+/* 講次頁「影片｜聲音」：每一種一顆，尾端是它自己的下載鈕（2026-11-28） */
+.media-row { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin: var(--sp-2) 0; }
+.mchip { display: inline-flex; align-items: stretch; border: 1px solid var(--line2); border-radius: var(--r-btn); background: var(--card); overflow: hidden; }
+.mchip.sel { background: var(--chip); border-color: var(--fg); }
+.mchip-main { display: inline-flex; align-items: center; gap: 6px; min-height: 38px; padding: 0 10px; border: 0; background: none; color: var(--fg);
+  font: inherit; font-size: var(--fs-chip); cursor: pointer; }
+.mchip-main .i, .mchip .off-btn .i { width: 20px; height: 20px; }
+.mchip .off-btn { min-height: 38px; padding: 0 8px; border: 0; border-left: 1px solid var(--line2); border-radius: 0; }
 .src-row .filter { min-height: 34px; padding: 2px 12px; }
 .off-course .src-row { margin: 0; }
 .off-slot { display: inline-flex; }
