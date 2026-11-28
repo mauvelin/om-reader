@@ -430,7 +430,7 @@ function courseLessons(c) {
   const units = [...new Set(groups.map((g) => g.unit).filter(Boolean))];
   const heads = groups.filter((g) => g.head);
   const tocOn = total >= 15 && (heads.length >= 3 || units.length >= 3);
-  const toc = tocOn ? h('details', { class: 'ctoc', open: '' }, h('summary', null, svgIcon('list'), '目錄')) : null;
+  const toc = tocOn ? h('details', { class: 'ctoc' + (units.length ? ' has-units' : ''), open: '' }, h('summary', null, svgIcon('list'), '目錄')) : null;
   if (toc) wrap.append(toc);
   const jump = (el) => (e) => { e.preventDefault(); el.scrollIntoView({ block: 'start' }); };
   const tocRow = (label, ls, el, extra) => h('a', { class: 'ctoc-row', href: '#', onclick: jump(el) }, h('span', null, label, extra || null),
@@ -456,12 +456,20 @@ function courseLessons(c) {
     unitLs.push(...g.lessons);
     if (g.head) {
       const ids = new Set(g.lessons.map((l) => l.id));
-      const hs = g.from ? [] : c.handouts.filter((x) => (x.lesson_ids || []).some((id) => ids.has(id)));
+      const hs = (g.from ? [] : c.handouts.filter((x) => (x.lesson_ids || []).some((id) => ids.has(id))))
+        .map((x) => ({ x, d: CAT.byPath.get(vp(x.md)) })).filter((o) => o.d);
       const shared = g.from ? h('span', { class: 'shared' }, `與〈${shortCourse(g.from)}〉共用`) : null;
-      const el = h('div', { class: 'chapter-head' }, h('span', null, g.title), shared,
-        ...hs.map((x) => { const d = CAT.byPath.get(vp(x.md)); return d ? h('a', { class: 'chip-link', href: pageHref(d.p) }, '講義：' + (x.handout_title || x.title)) : null; }));
+      // 講義（本人 2026-11-28：多則時跟章名混在一起太亂）：一則＝一顆「講義」鈕；多則＝「講義 N」，點開在章名下方列出
+      const hName = (x) => { const t = (x.handout_title || x.title || '').replace(/^.*｜/, ''); return /^(講義|簡報|講義與簡報)$/.test(t) ? `${g.title || ''} 講義`.trim() : t; };
+      const box = hs.length > 1 ? h('ul', { class: 'ch-handouts', hidden: true }, hs.map((o) => h('li', null, h('a', { href: pageHref(o.d.p) }, hName(o.x))))) : null;
+      const hBtn = !hs.length ? null : hs.length === 1
+        ? h('a', { class: 'chip-btn', href: pageHref(hs[0].d.p), title: hName(hs[0].x) }, '講義')
+        : h('button', { type: 'button', class: 'chip-btn', 'aria-expanded': 'false', onclick: (e) => {
+          box.hidden = !box.hidden; e.currentTarget.setAttribute('aria-expanded', String(!box.hidden)); } }, `講義 ${hs.length}`);
+      const el = h('div', { class: 'chapter-head' }, h('span', { class: 'ch-title' }, g.title, shared), hBtn);
       const mark = h('div', { class: 'ch-anchor' });   // 章標題會黏在頂端，捲動目標放在它前面的不黏元素
       wrap.append(mark, el);
+      if (box) wrap.append(box);
       list = null;
       if (toc) (unitBox || toc).append(tocRow(g.title, g.lessons, mark, g.from ? h('span', { class: 'shared' }, '共用') : null));
     }

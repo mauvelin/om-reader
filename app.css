@@ -385,6 +385,13 @@ label.check input { width: 20px; height: 20px; accent-color: var(--accent); }
 .chapter-head { position: sticky; top: var(--bar-h, 62px); z-index: 3; background-color: var(--bg); scroll-margin-top: var(--bar-h, 62px); }
 .unit-head { scroll-margin-top: var(--bar-h, 62px); }
 .ch-anchor { height: 0; scroll-margin-top: var(--bar-h, 62px); }
+.chapter-head { flex-wrap: nowrap; justify-content: space-between; }
+.chapter-head .ch-title { min-width: 0; }
+.chip-btn { flex: none; font-size: var(--fs-chip); font-weight: normal; color: var(--fg); background: var(--chip); border: 1px solid var(--line);
+  border-radius: 999px; padding: 2px 10px; text-decoration: none; cursor: pointer; }
+.ch-handouts { list-style: none; margin: 0 0 var(--sp-2); padding: var(--sp-2) var(--sp-3); border: 1px solid var(--line); border-radius: 0; }
+.ch-handouts li { padding: 4px 0; }
+.ctoc.has-units > .ctoc-row > span:first-child::before { content: "\2022  "; color: var(--muted); }
 .chip-link { font-weight: normal; color: var(--fg); text-decoration: underline; text-decoration-color: var(--link-line); text-underline-offset: 3px; }
 .list a.item.lesson-row { display: grid; grid-template-columns: 1fr auto; column-gap: var(--sp-3); align-items: center; }
 .list a.item.lesson-row .t { grid-column: 1; }
