@@ -196,9 +196,9 @@ function lessonProgress(l) {
 }
 function progressBadge(l) {
   const p = lessonProgress(l);
-  // 看完＝實心綠底方框；沒看＝空方框；看到一半＝百分比（本人 2026-11-28，兩頁同一種樣子）
-  if (!p) return h('span', { class: 'done-box', 'aria-label': '還沒看' });
-  if (p.completed) return h('span', { class: 'done-box on', 'aria-label': '已看完' }, '✓');
+  // 看完＝✓、看到一半＝百分比，同一個灰色；沒看什麼都不放（本人 2026-11-28：方框像可以按）
+  if (!p) return null;
+  if (p.completed) return h('span', { class: 'done', 'aria-label': '已看完' }, '✓');
   return h('span', { class: 'pct' }, p.pct != null ? `${p.pct}%` : clock(p.t_s));
 }
 // 課程目錄（索引的 outline，2026-11-28）：章節依序；from＝借入的講次（別門課的同一講、不複製，進度共用）
@@ -429,9 +429,10 @@ function courseBookmarkRow(c) {
 // 講次（2026-11-28 起照索引的 outline）：大單元一列、章一列（帶該章講義）；借入的講次標「與〈某課〉共用」；
 // 15 講以上、分三組以上的課，最上方有目錄，點一章就捲過去；章標題往下捲時固定在頂端
 function lessonRow(l, gTitle, isNext) {
-  const { name, hadDate } = lessonDisplay(l, gTitle);
-  const lead = l.order || (hadDate || !name ? dateLong(l.date) : '');
-  const label = [lead, name].filter(Boolean).join('　') || l.lesson_title || l.title;
+  const t = l.lesson_title || l.title;
+  const { hadDate } = lessonDisplay(l, null);
+  const lead = l.order || (hadDate ? '' : l.date || '');
+  const label = [lead, t].filter(Boolean).join('　');
   const audio = l.media && l.media.kind && /^mp3$|^m4a$/.test(l.media.kind);
   const sub = [audio ? '聲音' : '', fmtDur(l.media && l.media.duration_s)].filter(Boolean).join('・');
   return h('li', null, h('a', { class: 'item lesson-row', href: '#/lesson/' + l.id },
@@ -489,7 +490,7 @@ function courseLessons(c) {
       const hName = (x) => { const t = (x.handout_title || x.title || '').replace(/^.*｜/, ''); return /^(講義|簡報|講義與簡報)$/.test(t) ? `${g.title || ''} 講義`.trim() : t; };
       const box = hs.length > 1 ? h('ul', { class: 'ch-handouts', hidden: true }, hs.map((o) => h('li', null, h('a', { href: pageHref(o.d.p) }, hName(o.x))))) : null;
       const hBtn = !hs.length ? null : hs.length === 1
-        ? h('a', { class: 'chip-btn', href: pageHref(hs[0].d.p), title: hName(hs[0].x) }, '講義')
+        ? h('a', { class: 'chip-btn', href: pageHref(hs[0].d.p), title: hName(hs[0].x) }, '講義 ›')
         : h('button', { type: 'button', class: 'chip-btn', 'aria-expanded': 'false', onclick: (e) => {
           box.hidden = !box.hidden; e.currentTarget.setAttribute('aria-expanded', String(!box.hidden));
           e.currentTarget.textContent = `講義 ${hs.length} ${box.hidden ? '▾' : '▴'}`; } }, `講義 ${hs.length} ▾`);
@@ -645,14 +646,13 @@ async function viewLesson(id, qs) {
   // 標記看完（本人 2026-11-04，比照練習頁的「練完了」）：圓圈打勾，播放中也在。看完的標記會同步到電腦與其他裝置，
   // 依 learn 的規則「看完不取消」（任何一台說看完就是看完），所以按下去先確認；看完後變綠、不能再按
   // 看完：寫出字、用跟講次列表同一種方框（本人 2026-11-28，獨立審核：跟「跟隨」的勾分得開）
-  const doneBox = h('span', { class: 'done-box' });
-  const doneTxt = h('span', null, '看完');
-  const doneBtn = h('button', { type: 'button', class: 'btn done-ic' }, doneBox, doneTxt);
+  const doneTxt = h('span', null, '標記看完');
+  const doneBtn = h('button', { type: 'button', class: 'btn done-ic' }, doneTxt);
   const paintDone = () => {
     const p = lessonProgress(l);
     const on = !!(p && p.completed);
     const label = on ? '已看完' : '標記這一講看完';
-    doneBox.classList.toggle('on', on); doneBox.textContent = on ? '✓' : ''; doneTxt.textContent = on ? '已看完' : '看完';
+    doneTxt.textContent = on ? '✓ 已看完' : '標記看完';
     doneBtn.classList.toggle('on', on); doneBtn.disabled = on;
     doneBtn.setAttribute('aria-label', label); doneBtn.title = label;
   };
@@ -979,9 +979,7 @@ async function viewLesson(id, qs) {
     h('a', { class: 'btn quiet', href: '#/course/' + encodeURIComponent(c.id) }, '講次目錄'),
     next ? h('a', { class: 'btn', href: '#/lesson/' + next.id, 'aria-label': `下一講 ${next.order || ''}` }, next.order || '下一講', svgIcon('chev')) : h('span'));
   // 講名跟講次列表用同一套整理（本人 2026-11-28）：章名・日期・剩下的字（例：勝王瑜伽經・6 月 18 日）
-  const og = (courseGroups(c) || []).find((g) => g.head && g.lessons.some((x) => x.id === l.id));
-  const ln = lessonDisplay(l, og && og.title);
-  const h1Text = [ln.hadGroup ? og.title : '', ln.hadDate ? dateLong(l.date) : '', ln.name].filter(Boolean).join('・') || l.lesson_title || l.title;
+  const h1Text = l.lesson_title || l.title;   // 本人 2026-11-28：講名維持原標題
   const head = areaColor(h('div', { class: 'doc-head' }, h('nav', { class: 'crumb' }, h('a', { href: '#/course/' + encodeURIComponent(c.id) }, c.title)),
     h('h1', null, h1Text)), null, c.category);
   // iPad 等寬螢幕：左欄播放（固定不捲走）、右欄逐字稿與其他分頁；iPhone 照常單欄（CSS 決定）

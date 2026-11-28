@@ -708,3 +708,24 @@ ol.steps li { margin: 0 0 var(--sp-2); line-height: 1.6; }
 pre.resolver-code { font-size: 12px; max-height: 14em; overflow: auto; }
 /* 狀態訊息裡的長網址要能換行（不然會把整頁撐寬）*/
 .status { overflow-wrap: anywhere; }
+
+/* ── 課程頁目錄與章節標題：線條與底色收斂（本人 2026-11-28 第三輪）──
+   只留兩條線：目錄下緣一條（跟講次列表分開）、大單元名稱上方的間距不畫線。
+   章節標題不畫底線、底色跟頁面一樣（黏在頂端時才看得出它擋住下面）；講義、接著看都改成純文字，不用膠囊 */
+.ctoc { border: 0; border-bottom: 1px solid var(--line); padding: 0 0 var(--sp-2); margin: var(--sp-2) 0 var(--sp-4); }
+.ctoc > summary { padding: var(--sp-2) 0; }
+.ctoc-row { border-bottom: 0; padding: 6px 0; }
+.ctoc-sub { padding-left: var(--sp-5); }
+.ctoc-sub .ctoc-row { color: var(--muted); }
+.sec-title.unit-head { border-bottom: 0; padding-bottom: 0; margin: var(--sp-6) 0 0; font-size: var(--fs-body); color: var(--fg); letter-spacing: 0; }
+.chapter-head { border-bottom: 0; padding: 6px 0; margin: var(--sp-4) 0 var(--sp-1); background-color: var(--bg); background-image: var(--paper);
+  font-size: var(--fs-label); font-weight: var(--fw-strong); color: var(--fg); }
+.unit-head + .ch-anchor + .chapter-head { margin-top: var(--sp-2); }
+.ch-frac { color: var(--muted); }
+.chip-btn { background: none; border: 0; border-radius: 0; padding: 4px 0 4px 8px; color: var(--muted); font-weight: normal; }
+.ch-handouts { border: 0; padding: 0 0 0 var(--sp-3); margin: 0 0 var(--sp-2); }
+.ch-handouts a { color: var(--fg); }
+.next-tag { background: none; color: var(--accent); padding: 0; border-radius: 0; font-weight: var(--fw-strong); }
+.next-tag::after { content: "・"; color: var(--muted); font-weight: normal; }
+.lesson-row .done { color: var(--muted); font-weight: normal; font-size: var(--fs-chip); }
+.lesson-ctl .done-ic.on, .lesson-ctl .done-ic:disabled { color: var(--muted); background: transparent; border-color: transparent; font-weight: normal; }
